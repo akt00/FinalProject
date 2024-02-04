@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from torch.nn.functional import F
+import torch.nn.functional as F
 
 
 # the code in this section is originally written by Akihiro Tanimoto
@@ -52,9 +52,9 @@ class FocalLoss(nn.Module):
         _preds = preds.view(-1)
         _targets = targets.view(-1)
 
-        return self.focal_loss_logits(_preds, _targets)
+        return self.focal_loss_logits(_preds, _targets, self.gamma, self.alpha)
 
-    def focal_loss_logits(output: torch.Tensor, target: torch.Tensor,
+    def focal_loss_logits(self, output: torch.Tensor, target: torch.Tensor,
                           gamma: float, alpha: float):
         target = target.type(output.type())
         logpt = F.binary_cross_entropy_with_logits(
@@ -67,22 +67,24 @@ class FocalLoss(nn.Module):
         return loss.mean()
 
 
+class FocalDiceLoss(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.focal_loss = FocalLoss()
+        self.dice_loss = DiceLoss()
+
+    def forward(self, preds, targets):
+        return self.focal_loss(preds, targets) + self.dice_loss(preds, targets)
+
+
 # the code in this section is originally written by Akihiro Tanimoto
 class BCEDiceLoss(nn.Module):
     """ Binary cross entropy loss with dice loss
 
     Not in use
-
-    Attributes:
-        bce_weight (float): weight ratio for bce loss
-        dice_weight (float): weight ratio for dice loss
     """
-    def __init__(self, bce_weight=.5, dice_weight=.5) -> None:
-        assert bce_weight + dice_weight == 1., 'the sum of bce_weight and\
-              dice_weight must be one'
+    def __init__(self) -> None:
         super(BCEDiceLoss, self).__init__()
-        self.bce_weight = bce_weight
-        self.dice_weight = dice_weight
         self.bce_loss = nn.BCELoss()
         self.dice_loss = DiceLoss()
 
@@ -96,12 +98,7 @@ class BCEDiceLoss(nn.Module):
         Returns (torch.Tensor):
             The computated bce dice loss.
         """
-        # computes bce loss
-        bce_loss = self.bce_loss(preds, targets)
-        # computes dice loss
-        dice_loss = self.dice_loss(preds, targets)
-        # returns the weighted average of bce loss and dice loss
-        return self.bce_weight * bce_loss + self.dice_weight * dice_loss
+        return self.bce_loss(preds, targets) + self.dice_loss(preds, targets)
 # the cell ends here
 
 
@@ -109,9 +106,9 @@ class BCEDiceLoss(nn.Module):
 if __name__ == '__main__':
     import torch
     # tests the losses
-    loss_fn = DiceLoss()
-    in_shape = [500, 1, 24, 24]
-    preds = torch.randn(*in_shape)
+    loss_fn = BCEDiceLoss()
+    in_shape = [32, 1, 256, 256]
+    preds = torch.randn(*in_shape).clamp(min=0, max=1)
     gt = (torch.randn(*in_shape) > .5).float()
     print(loss_fn(preds, gt))
 # the cell ends here
