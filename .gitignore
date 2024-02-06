@@ -1,5 +1,5 @@
 # misc
-dataset/*
+dataset/*/
 runs/*
 temp*
 
