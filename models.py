@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from torchvision.ops import deform_conv2d
 
 
 # the code in this section is originally written by Akihiro Tanimoto
@@ -7,32 +8,32 @@ class ConvBlock(nn.Module):
     """ CNN block layer for U-Net
 
     Attributes:
-        in_channels (int): the number of input channels
-        features: the number of output channels after the first ConvBlock
+        in_channels: the number of input channels
+        features: the number of output channels
     """
     def __init__(self, in_channels: int, features: int) -> None:
         super(ConvBlock, self).__init__()
-        self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=features,
-                               kernel_size=3, padding=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(num_features=features)
-        self.r1 = nn.ReLU()
-        self.conv2 = nn.Conv2d(in_channels=features, out_channels=features,
-                               kernel_size=3, padding=1, bias=False)
-        self.bn2 = nn.BatchNorm2d(num_features=features)
-        self.r2 = nn.ReLU()
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(in_channels=in_channels, out_channels=features,
+                      kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(num_features=features),
+            nn.ReLU(),
+        )
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(in_channels=features, out_channels=features,
+                      kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(num_features=features),
+            nn.ReLU()
+        )
 
     def forward(self, x: torch.Tensor):
         """ forward pass
 
         Args:
-            x: input feature
+            x: input tensor
         """
         x = self.conv1(x)
-        x = self.bn1(x)
-        x = self.r1(x)
         x = self.conv2(x)
-        x = self.bn2(x)
-        x = self.r2(x)
         return x
 # The section ends here
 
@@ -43,22 +44,18 @@ class UNet(nn.Module):
 
     Attributes:
         in_channels: the number of input channels
-        out_channels: the number of output channels. this equals the \
-            number of classes
-        features: the number of output channels from the 1st ConvBlock
+        out_channels: the number of classes
+        features: the number of the base features
     """
     def __init__(self, in_channels: int, out_channels: int = 1,
                  features: int = 32) -> None:
         super(UNet, self).__init__()
         # encoder layers
-        self.enc1 = ConvBlock(in_channels=in_channels, features=features)
-        self.p1 = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.enc2 = ConvBlock(in_channels=features, features=features*2)
-        self.p2 = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.enc3 = ConvBlock(in_channels=features*2, features=features*4)
-        self.p3 = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.enc4 = ConvBlock(in_channels=features*4, features=features*8)
-        self.p4 = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.p = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.e1 = ConvBlock(in_channels=in_channels, features=features)
+        self.e2 = ConvBlock(in_channels=features, features=features*2)
+        self.e3 = ConvBlock(in_channels=features*2, features=features*4)
+        self.e4 = ConvBlock(in_channels=features*4, features=features*8)
         # bottom
         self.bottolneck = ConvBlock(in_channels=features*8,
                                     features=features*16)
@@ -69,7 +66,7 @@ class UNet(nn.Module):
             kernel_size=2,
             stride=2
             )
-        self.dec4 = ConvBlock(in_channels=features*16, features=features*8)
+        self.d4 = ConvBlock(in_channels=features*16, features=features*8)
 
         self.up3 = nn.ConvTranspose2d(
             in_channels=features*8,
@@ -77,7 +74,7 @@ class UNet(nn.Module):
             kernel_size=2,
             stride=2
         )
-        self.dec3 = ConvBlock(in_channels=features*8, features=features*4)
+        self.d3 = ConvBlock(in_channels=features*8, features=features*4)
 
         self.up2 = nn.ConvTranspose2d(
             in_channels=features*4,
@@ -85,7 +82,7 @@ class UNet(nn.Module):
             kernel_size=2,
             stride=2
         )
-        self.dec2 = ConvBlock(in_channels=features*4, features=features*2)
+        self.d2 = ConvBlock(in_channels=features*4, features=features*2)
 
         self.up1 = nn.ConvTranspose2d(
             in_channels=features*2,
@@ -93,7 +90,7 @@ class UNet(nn.Module):
             kernel_size=2,
             stride=2
         )
-        self.dec1 = ConvBlock(in_channels=features*2, features=features)
+        self.d1 = ConvBlock(in_channels=features*2, features=features)
 
         self.out_conv = nn.Conv2d(
             in_channels=features, out_channels=out_channels, kernel_size=1
@@ -105,27 +102,28 @@ class UNet(nn.Module):
         Args:
             x: input tensor
         """
-        enc1 = self.enc1(x)
-        enc2 = self.enc2(self.p1(enc1))
-        enc3 = self.enc3(self.p2(enc2))
-        enc4 = self.enc4(self.p3(enc3))
-
-        bottleneck = self.bottolneck(self.p4(enc4))
-
-        dec4 = self.up4(bottleneck)
-        dec4 = torch.cat(tensors=(dec4, enc4), dim=1)
-        dec4 = self.dec4(dec4)
-        dec3 = self.up3(dec4)
-        dec3 = torch.cat(tensors=(dec3, enc3), dim=1)
-        dec3 = self.dec3(dec3)
-        dec2 = self.up2(dec3)
-        dec2 = torch.cat(tensors=(dec2, enc2), dim=1)
-        dec2 = self.dec2(dec2)
-        dec1 = self.up1(dec2)
-        dec1 = torch.cat(tensors=(dec1, enc1), dim=1)
-        dec1 = self.dec1(dec1)
-
-        return torch.sigmoid(self.out_conv(dec1))
+        # encoding layers
+        e1 = self.e1(x)
+        e2 = self.e2(self.p(e1))
+        e3 = self.e3(self.p(e2))
+        e4 = self.e4(self.p(e3))
+        # bottleneck layer
+        bottleneck = self.bottolneck(self.p(e4))
+        # decoding layers
+        d4 = self.up4(bottleneck)
+        d4 = torch.cat(tensors=(d4, e4), dim=1)
+        d4 = self.d4(d4)
+        d3 = self.up3(d4)
+        d3 = torch.cat(tensors=(d3, e3), dim=1)
+        d3 = self.d3(d3)
+        d2 = self.up2(d3)
+        d2 = torch.cat(tensors=(d2, e2), dim=1)
+        d2 = self.d2(d2)
+        d1 = self.up1(d2)
+        d1 = torch.cat(tensors=(d1, e1), dim=1)
+        d1 = self.d1(d1)
+        # output convolution with sigmoid
+        return torch.sigmoid(self.out_conv(d1))
 # the section ends here
 
 
@@ -249,13 +247,60 @@ class AttentionGatedUNet(nn.Module):
 
 
 class DCNv2(nn.Module):
-    def __init__(self) -> None:
+    def __init__(self, in_channels: int, out_channels: int,
+                 kernel_size: int | tuple[int, int] = 3, stride: int = 1,
+                 padding: int = 1, bias: bool = False) -> None:
         super(DCNv2, self).__init__()
 
+        if isinstance(kernel_size, tuple):
+            kh, kw = kernel_size.shape[0], kernel_size.shape[1]
+        else:
+            kh, kw = kernel_size, kernel_size
+
+        self.stride = stride
+        self.padding = padding
+        # base convolution with deformable offsets
+        self.conv = nn.Conv2d(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=kernel_size, stride=stride, padding=padding, bias=bias
+        )
+        # offset convolution
+        self.offset = nn.Conv2d(
+            in_channels=in_channels,
+            out_channels=2 * kh * kw,
+            kernel_size=kernel_size, stride=stride, padding=padding, bias=bias
+        )
+        # weights are initialized to zero in the original paper
+        nn.init.constant_(self.offset.weight, 0.)
+        if bias:
+            nn.init.constant_(self.offset.bias, 0.)
+        # modulated mask convolution
+        self.mask_conv = nn.Conv2d(
+            in_channels=in_channels,
+            out_channels=kh * kw,
+            kernel_size=kernel_size,
+            stride=stride, padding=padding, bias=bias
+        )
+        # weights are initialized to zero in the original paper
+        nn.init.constant_(self.mask_conv.weight, 0.)
+        if bias:
+            nn.init.constant_(self.mask_conv.bias, 0.)
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        pass
+        offset = self.offset(x)
+        mask = 2 * torch.sigmoid(self.mask_conv(x))
+        out = deform_conv2d(input=x, offset=offset, weight=self.conv.weight,
+                            bias=self.conv.bias, stride=self.stride,
+                            padding=self.padding, mask=mask)
+        return out
+
+
+class DCNBlock(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
 
 
 t = torch.randn(8, 3, 256, 256)
-model = AttentionGatedUNet(3)
+model = DCNv2(3, 32)
 print(model(t).shape)
