@@ -1,6 +1,9 @@
+import math
+
 import onnx
 import onnxsim
 import torch
+from torch.optim.lr_scheduler import _LRScheduler
 from metrics import iou, sensitivity, specificity
 
 
@@ -110,3 +113,57 @@ def export2onnx(model: torch.nn.Module, model_name: str, input_shape: tuple,
         assert check
         onnx.save(model_sim, model_name)
 # the code ends here
+
+
+class WarmupCosineAnnealingLR(_LRScheduler):
+    def __init__(self, optimzer: torch.optim.Optimizer, multiplier: float,
+                 warmup_epoch: int, epochs: int, min_lr: float = 1e-5,
+                 last_epoch: int = -1, max_epoch: int = 30):
+        self.multiplier = multiplier
+        if self.multiplier < 1.:
+            raise ValueError('multipiler should be 1 or above')
+        self.warmup_epoch = warmup_epoch
+        self.last_epoch = last_epoch
+        self.eta_min = min_lr
+        self.T_max = float(epochs - warmup_epoch)
+        self.after_scheduler = True
+        self.max_epoch = max_epoch
+        super(WarmupCosineAnnealingLR, self).__init__(optimizer=optimzer,
+                                                      last_epoch=last_epoch)
+
+    def get_lr(self):
+        if self.max_epoch < self.last_epoch:
+            return [self.eta_min for _ in self.base_lrs]
+        elif self.last_epoch > self.warmup_epoch - 1:
+            return [self.eta_min + (base_lr - self.eta_min) *
+                    (1 + math.cos(math.pi * (self.last_epoch -
+                     self.warmup_epoch) / (self.T_max - 1))) / 2
+                    for base_lr in self.base_lrs]
+        # warmup
+        if self.multiplier == 1.:
+            return [base_lr * (float(self.last_epoch + 1) / self.warmup_epoch)
+                    for base_lr in self.base_lrs]
+        else:
+            return [base_lr * ((self.multiplier - 1.) * self.last_epoch /
+                    self.warmup_epoch + 1.)
+                    for base_lr in self.base_lrs]
+
+
+model = torch.nn.Sequential(
+    torch.nn.Linear(32, 32)
+)
+opt = torch.optim.SGD(model.parameters(), lr=1e-3, momentum=.9, nesterov=True)
+scheduler = WarmupCosineAnnealingLR(
+    opt, 1, 4, 30
+)
+lrs = []
+for ep in range(50):
+    lrs.append(*scheduler.get_lr())
+    opt.step()
+    scheduler.step()
+
+
+print(scheduler.last_epoch, scheduler.get_lr())
+import matplotlib.pyplot as plt
+plt.plot(lrs)
+plt.show()
