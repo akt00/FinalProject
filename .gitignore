@@ -2,6 +2,8 @@
 dataset/*/
 runs/*
 temp*
+models/*.onnx
+models/*.pth
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

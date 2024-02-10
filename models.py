@@ -30,7 +30,7 @@ class ConvBlock(nn.Module):
         """ forward pass
 
         Args:
-            x: input tensor
+            x: input tensor (b, ch, h, w)
         """
         x = self.conv1(x)
         x = self.conv2(x)
@@ -92,7 +92,7 @@ class UNet(nn.Module):
         """ forward pass
 
         Args:
-            x: input tensor
+            x: input tensor (b, ch, h, w)
         """
         # encoding layers
         e1 = self.e1(x)
