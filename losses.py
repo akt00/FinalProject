@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch import Tensor
 
 
 # the code in this section is originally written by Akihiro Tanimoto
@@ -13,13 +14,13 @@ class DiceLoss(nn.Module):
         kwargs:
             smoothing (float): avoids division by zero. default is 1.0
     """
-    def __init__(self, smooth=1.) -> None:
+    def __init__(self, smooth: float = 1.) -> None:
         super(DiceLoss, self).__init__()
         # smoothing value to avoid division by zero
         self.smooth = smooth
 
-    def forward(self, preds, targets):
-        """ returns the mean dice loss
+    def forward(self, preds: Tensor, targets: Tensor) -> Tensor:
+        """ Returns the mean dice loss
 
         Attributes:
             preds: prediction results from the troch model. (b, ch, h, w)
@@ -42,19 +43,18 @@ class DiceLoss(nn.Module):
 class FocalLoss(nn.Module):
     mode = 'binary'
 
-    def __init__(self, alpha=.25, gamma=2.) -> None:
+    def __init__(self, alpha: float = .25, gamma: float = 2.) -> None:
         super().__init__()
         self.alpha = alpha
         self.gamma = gamma
 
-    def forward(self, preds, targets):
+    def forward(self, preds: Tensor, targets: Tensor) -> Tensor:
         _preds = preds.view(-1)
         _targets = targets.view(-1)
-
         return self.focal_loss_logits(_preds, _targets, self.gamma, self.alpha)
 
-    def focal_loss_logits(self, output: torch.Tensor, target: torch.Tensor,
-                          gamma: float, alpha: float):
+    def focal_loss_logits(self, output: Tensor, target: Tensor, gamma: float,
+                          alpha: float) -> Tensor:
         target = target.type(output.type())
         logpt = F.binary_cross_entropy_with_logits(
             input=output, target=target, reduction='none'
@@ -72,17 +72,17 @@ class FocalDiceLoss(nn.Module):
         self.focal_loss = FocalLoss()
         self.dice_loss = DiceLoss()
 
-    def forward(self, preds, targets):
+    def forward(self, preds: Tensor, targets: Tensor) -> Tensor:
         return self.focal_loss(preds, targets) + self.dice_loss(preds, targets)
 
 
 class TverskyLoss(nn.Module):
-    def __init__(self, alpha=0.7, smooth=1.) -> None:
+    def __init__(self, alpha: float = .7, smooth: float = 1.) -> None:
         super().__init__()
         self.alpha = alpha
         self.smooth = smooth
 
-    def tversky(self, preds, targets):
+    def tversky(self, preds: Tensor, targets: Tensor) -> Tensor:
         _preds = preds[:, 0].contiguous().view(-1)
         _targets = targets[:, 0].contiguous().view(-1)
         tp = (_preds * _targets).sum()
@@ -91,35 +91,33 @@ class TverskyLoss(nn.Module):
         return (tp + self.smooth) / (
             tp + self.alpha * fn + (1 - self.alpha) * fp + self.smooth)
 
-    def forward(self, preds, targets):
+    def forward(self, preds: Tensor, targets: Tensor) -> Tensor:
         return 1 - self.tversky(preds, targets)
 
 
 class FocalTverskyLoss(nn.Module):
-    def __init__(self, alpha=.7, gamma=.75, smooth=1.) -> None:
+    def __init__(self, alpha: float = .7, gamma: float = .75,
+                 smooth: float = 1.) -> None:
         super().__init__()
         self.alpha = alpha
+        self.gamma = gamma
         self.smooth = smooth
         self.tversky = TverskyLoss(alpha=self.alpha, smooth=self.smooth)
-        self.gamma = gamma
 
-    def forward(self, preds, targets):
+    def forward(self, preds: Tensor, targets: Tensor) -> Tensor:
         tversky_score = self.tversky(preds, targets)
         return (1 - tversky_score).pow(self.gamma)
 
 
 # the code in this section is originally written by Akihiro Tanimoto
 class BCEDiceLoss(nn.Module):
-    """ Binary cross entropy loss with dice loss
-
-    Not in use
-    """
+    """ Binary cross entropy loss with dice loss """
     def __init__(self) -> None:
         super(BCEDiceLoss, self).__init__()
         self.bce_loss = nn.BCELoss()
         self.dice_loss = DiceLoss()
 
-    def forward(self, preds, targets):
+    def forward(self, preds: Tensor, targets: Tensor) -> Tensor:
         """ forward pass for loss computation
 
         Attributes:

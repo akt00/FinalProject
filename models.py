@@ -319,7 +319,8 @@ class DeformableUNet(nn.Module):
         self.e3 = DCNBlock(in_channels=features*2, features=features*4)
         self.e4 = DCNBlock(in_channels=features*4, features=features*8)
         # bottom
-        self.bottolneck = DCNBlock(in_channels=features*8, feature=features*16)
+        self.bottolneck = DCNBlock(in_channels=features*8,
+                                   features=features*16)
         # decoders
         self.up4 = nn.ConvTranspose2d(
             in_channels=features*16, out_channels=features*8,
