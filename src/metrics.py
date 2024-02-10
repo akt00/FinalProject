@@ -111,13 +111,3 @@ def specificity(p, gt, smooth: float = 1.):
 
 def yoden_j_index(p, gt, smooth: float = 1.):
     return sensitivity(p, gt, smooth) + specificity(p, gt, smooth) - 1
-
-
-# the code in this section is originally written by Akihiro Tanimoto
-if __name__ == '__main__':
-    # print-debugs the metric functions
-    in_shape = [2, 1, 100]
-    pred = torch.rand(size=in_shape)
-    target = torch.rand(size=in_shape)
-    mean_ap(pred, target)
-# the section ends here

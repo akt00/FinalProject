@@ -1,10 +1,11 @@
 import math
-
+# 3rd party libs
 import onnx
 import onnxsim
 import torch
 from torch.optim.lr_scheduler import _LRScheduler
-from metrics import iou, sensitivity, specificity
+# local modules
+from .metrics import iou, sensitivity, specificity
 
 
 # the code in this section is originally written by Akihiro Tanimoto
@@ -118,7 +119,7 @@ def export2onnx(model: torch.nn.Module, model_name: str, input_shape: tuple,
 class WarmupCosineAnnealingLR(_LRScheduler):
     def __init__(self, optimzer: torch.optim.Optimizer, multiplier: float,
                  warmup_epoch: int, epochs: int, min_lr: float = 1e-5,
-                 last_epoch: int = -1, max_epoch: int = 30):
+                 last_epoch: int = -1) -> None:
         self.multiplier = multiplier
         if self.multiplier < 1.:
             raise ValueError('multipiler should be 1 or above')
@@ -127,12 +128,11 @@ class WarmupCosineAnnealingLR(_LRScheduler):
         self.eta_min = min_lr
         self.T_max = float(epochs - warmup_epoch)
         self.after_scheduler = True
-        self.max_epoch = max_epoch
         super(WarmupCosineAnnealingLR, self).__init__(optimizer=optimzer,
                                                       last_epoch=last_epoch)
 
     def get_lr(self):
-        if self.max_epoch < self.last_epoch:
+        if self.T_max + self.warmup_epoch < self.last_epoch:
             return [self.eta_min for _ in self.base_lrs]
         elif self.last_epoch > self.warmup_epoch - 1:
             return [self.eta_min + (base_lr - self.eta_min) *
@@ -147,23 +147,3 @@ class WarmupCosineAnnealingLR(_LRScheduler):
             return [base_lr * ((self.multiplier - 1.) * self.last_epoch /
                     self.warmup_epoch + 1.)
                     for base_lr in self.base_lrs]
-
-
-model = torch.nn.Sequential(
-    torch.nn.Linear(32, 32)
-)
-opt = torch.optim.SGD(model.parameters(), lr=1e-3, momentum=.9, nesterov=True)
-scheduler = WarmupCosineAnnealingLR(
-    opt, 1, 4, 30
-)
-lrs = []
-for ep in range(50):
-    lrs.append(*scheduler.get_lr())
-    opt.step()
-    scheduler.step()
-
-
-print(scheduler.last_epoch, scheduler.get_lr())
-import matplotlib.pyplot as plt
-plt.plot(lrs)
-plt.show()

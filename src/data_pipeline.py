@@ -1,5 +1,6 @@
-import cv2 as cv
 import os
+# 3rd party libs
+import cv2 as cv
 from torch.utils.data import Dataset
 
 
@@ -83,43 +84,4 @@ class BrainDataset(Dataset):
             if self.target_transform:
                 label = self.target_transform(label)
             return image, label
-# the cell ends here
-
-
-# the code in this section is originally written by Akihiro Tanimoto
-if __name__ == '__main__':
-    # testing the trained model
-    import torch
-    from torchvision import transforms
-    from losses import DiceLoss
-
-    class RescaleMask:
-        def __call__(self, img):
-            return img.clamp(min=0, max=1)
-
-    mask_transform = transforms.Compose([
-        transforms.ToTensor(),
-        RescaleMask()
-    ])
-    train_loader = BrainDataset(True, transforms.ToTensor(), mask_transform)
-    test_loader = BrainDataset(False, transforms.ToTensor(), mask_transform)
-    print(len(train_loader), len(test_loader))
-    model = torch.load('models/model.pth')
-    device = torch.device('cuda')
-    model.eval().to(device)
-    loss_fn = DiceLoss().to(device)
-
-    for img, gt in test_loader:
-        img, gt = img.to(device), gt.to(device)
-        img = img.unsqueeze(0)
-        pred = model(img.to(device)).squeeze(0)
-        print(f'loss: {loss_fn(pred, gt).item():.7f}')
-        img = img.squeeze(0).detach().cpu().numpy().transpose(1, 2, 0)
-        gt = gt.detach().cpu().numpy().transpose(1, 2, 0)
-        pred = (pred > .9).float().detach().cpu().numpy()\
-            .transpose(1, 2, 0) * 255
-        cv.imshow('Input Image', img)
-        cv.imshow('Model Prediction', pred)
-        cv.imshow('Ground Truth', gt)
-        cv.waitKey(400)
 # the cell ends here

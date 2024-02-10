@@ -129,16 +129,3 @@ class BCEDiceLoss(nn.Module):
         """
         return self.bce_loss(preds, targets) + self.dice_loss(preds, targets)
 # the cell ends here
-
-
-# the code in this section is originally written by Akihiro Tanimoto
-if __name__ == '__main__':
-    import torch
-
-    t1 = torch.randn(8, 1, 10, 10)
-    t1 = (t1 > 0.5).float()
-    t2 = torch.randn(8, 1, 10, 10)
-    t2 = (t2 > 0.5).float()
-    loss_fn = FocalTverskyLoss()
-    print(loss_fn(t1, t2))
-# the cell ends here
