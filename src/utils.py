@@ -9,7 +9,7 @@ from torch.optim import Optimizer
 from torch.nn import Module
 from torch.utils.data import DataLoader
 # local modules
-from .metrics import iou, sensitivity, specificity
+from .metrics import iou, mean_ap, precision, sensitivity, f1_score
 
 
 # the code in this section is originally written by Akihiro Tanimoto
@@ -65,29 +65,31 @@ def evaluate(model: Module, loss_fn: Module, data_loader: DataLoader,
     """
     model.eval().to(device=dev)
     num_batches = len(data_loader)
-    test_loss, test_miou, test_sensitivity, test_specificity = .0, .0, .0, .0
+    test_loss, test_miou, test_map = .0, .0, .0, .0
+    test_precision, test_sensitivity, test_f1 = .0, .0, .0
     with torch.no_grad():
         for images, targets in data_loader:
             images, targets = images.to(device=dev), targets.to(device=dev)
             preds = model(images)
             test_loss += loss_fn(preds, targets).item()
-            test_miou += iou((preds > .9).float(), targets).mean(0).item()
-            test_sensitivity += sensitivity((preds > .9).float(),
-                                            targets).mean(0).item()
-            test_specificity += specificity((preds > .9).float(),
-                                            targets).mean(0).item()
+            test_miou += iou((preds > .5).float(), targets).mean(0).item()
+            test_map += mean_ap((preds > .5).float(), targets).mean(0).item()
+            test_precision += precision((preds > .5).float(), targets).mean(0).item()
+            test_sensitivity += sensitivity((preds > .5).float(), targets).mean(0).item()
+            test_f1 += f1_score((preds > .5).float(), targets).mean(0).item()
     # iou, sensitivity, specificity, youden's j index
     test_loss /= num_batches
     test_miou /= num_batches
+    test_map /= num_batches
+    test_precision /= num_batches
     test_sensitivity /= num_batches
-    test_specificity /= num_batches
-    j_index = test_sensitivity + test_specificity - 1
+    test_f1 /= num_batches
 
-    print(f'Test Metrics: \n    Loss: {test_loss:.5f} mIoU: {test_miou:.5f}'
-          f' Sensitivity: {test_sensitivity:.5f} Specificity: '
-          f'{test_specificity:.5f} Youden\'s J Index: {j_index:.5f}')
+    print(f'Test Metrics: \n    Loss: {test_loss:.4f} mIoU: {test_miou:.4f}'
+          f' mAP: {test_map:.4f} Precision: {test_precision:.4f}'
+          f' Recall: {test_sensitivity:.4f} F1: {test_f1:.4f}')
 
-    return test_loss, test_miou, test_sensitivity, test_specificity, j_index
+    return test_loss, test_miou, test_map, test_precision, test_sensitivity, test_f1
 # the code ends here
 
 

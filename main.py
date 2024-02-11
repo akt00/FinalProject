@@ -7,7 +7,7 @@ from src.data_pipeline import BrainDataset
 
 
 if __name__ == '__main__':
-    test_loader = BrainDataset(False, ToTensor(), ToTensor())
+    test_loader = BrainDataset(True, ToTensor(), ToTensor())
     model = torch.load('models/model.pth')
     device = torch.device('cuda')
     model.eval().to(device)
@@ -23,4 +23,4 @@ if __name__ == '__main__':
         cv.imshow('Input Image', img)
         cv.imshow('Model Prediction', pred)
         cv.imshow('Ground Truth', gt)
-        cv.waitKey(400)
+        cv.waitKey(250)
