@@ -3,26 +3,29 @@ import math
 import onnx
 import onnxsim
 import torch
+from torch import device, Tensor
 from torch.optim.lr_scheduler import _LRScheduler
+from torch.optim import Optimizer
+from torch.nn import Module
+from torch.utils.data import DataLoader
 # local modules
 from .metrics import iou, sensitivity, specificity
 
 
 # the code in this section is originally written by Akihiro Tanimoto
-def train_one_epoch(model, loss_fn, optimizer, data_loader,
-                    device=torch.device('cuda')):
+def train_one_epoch(model: Module, loss_fn: Module, optimizer: Optimizer,
+                    data_loader: DataLoader, dev: device = device('cuda')
+                    ) -> Tensor:
     """ Trains the model for one epoch
-
-    Supports only the standard backprop path
 
     Args:
         model: torch's model
         loss_fn: loss function
         optimizer: torch's optimizer
-        data_loader: torch's DataLoader object that wraps's the Dataset object
-        device (torch.device): device type (cpu|cuda)
+        data_loader: torch's DataLoader
+        device: device type (cpu|cuda)
     """
-    model.train().to(device)
+    model.train().to(device=dev)
     batch_size = None
     dataset_size = len(data_loader.dataset)
     avg_loss = 0
@@ -30,12 +33,12 @@ def train_one_epoch(model, loss_fn, optimizer, data_loader,
         if batch_size is None:
             batch_size = len(images)
         optimizer.zero_grad()
-        images, targets = images.to(device), targets.to(device)
+        images, targets = images.to(device=dev), targets.to(device=dev)
         preds = model(images)
         loss = loss_fn(preds, targets)
-        avg_loss += loss
         loss.backward()
         optimizer.step()
+        avg_loss += loss.item()
         # prints out the current loss after each 25 batches
         if batch % 25 == 0:
             loss, current = loss.item(), (batch + 1) * batch_size
@@ -48,23 +51,24 @@ def train_one_epoch(model, loss_fn, optimizer, data_loader,
 
 
 # the code in this section is originally written by Akihiro Tanimoto
-def evaluate(model, loss_fn, data_loader, device=torch.device('cuda')):
+def evaluate(model: Module, loss_fn: Module, data_loader: DataLoader,
+             dev: device = device('cuda')) -> tuple:
     """ Evalutes the model on the test dataset
 
     Supported metrics: iou, specificity, sensitivity, youden's j index
 
     Args:
-        model (torch.nn.Module): PyTorch's model
-        loss_fn (torch.nn.Module): loss function
+        model: PyTorch's model
+        loss_fn: loss function
         data_loader: torch's DataLoader for test
-        device (torch.device): device type (cpu|cuda)
+        device: device type (cpu|cuda)
     """
-    model.eval().to(device)
+    model.eval().to(device=dev)
     num_batches = len(data_loader)
     test_loss, test_miou, test_sensitivity, test_specificity = .0, .0, .0, .0
     with torch.no_grad():
         for images, targets in data_loader:
-            images, targets = images.to(device), targets.to(device)
+            images, targets = images.to(device=dev), targets.to(device=dev)
             preds = model(images)
             test_loss += loss_fn(preds, targets).item()
             test_miou += iou((preds > .9).float(), targets).mean(0).item()
@@ -72,7 +76,6 @@ def evaluate(model, loss_fn, data_loader, device=torch.device('cuda')):
                                             targets).mean(0).item()
             test_specificity += specificity((preds > .9).float(),
                                             targets).mean(0).item()
-
     # iou, sensitivity, specificity, youden's j index
     test_loss /= num_batches
     test_miou /= num_batches
@@ -90,17 +93,16 @@ def evaluate(model, loss_fn, data_loader, device=torch.device('cuda')):
 
 # the code in this section is originally written by Akihiro Tanimoto
 def export2onnx(model: torch.nn.Module, model_name: str, input_shape: tuple,
-                device=torch.device('cuda'), simplify=True) -> None:
+                dev: device = device('cuda'), simplify=True) -> None:
     """ Exports pytorch model to ONNX format
 
-    model (torch.nn.Module): PyTorch model
-    model_name (str): the name of the exported model with onnx extention
-    input_shape (tuple): the shape of the input to the onnx model. (dynamic
-        input is not yet supported)
-    device (torch.device): torch's device (cpu|cuda)
-    simplify (bool): if true, the model representation in onnx is simplified.
+    model: PyTorch model
+    model_name: the name of the exported model with onnx extention
+    input_shape: the shape of the input to the onnx model (b, ch, h, w)
+    device: torch's device (cpu|cuda)
+    simplify: if true, the model representation in onnx is simplified.
     """
-    x = torch.randn(*input_shape, requires_grad=True).to(device=device)
+    x = torch.randn(*input_shape, requires_grad=True).to(device=dev)
     torch.onnx.export(
         model,
         x,

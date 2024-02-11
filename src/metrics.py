@@ -1,12 +1,11 @@
 import torch
+from torch import Tensor
 
 
-def pixel_accuracy(p: torch.Tensor, gt: torch.Tensor,
-                   smooth: float = 1.) -> torch.Tensor:
+def pixel_accuracy(p: Tensor, gt: Tensor) -> Tensor:
     p = p[:, 0].contiguous().view(p.shape[0], -1)
     gt = gt[:, 0].contiguous().view(gt.shape[0], -1)
-    return (((p - gt) == 0).float().sum(dim=1) + smooth) / (
-        torch.ones_like(gt).sum(dim=1) + smooth)
+    return (p == gt).float().sum(dim=1) / gt.shape[1]
 
 
 # the code in this section is originally written by Akihiro Tanimoto
@@ -60,8 +59,8 @@ def sensitivity(p: torch.Tensor, gt: torch.Tensor, smooth: float = 1.):
 
 def f1_score(p: torch.Tensor, gt: torch.Tensor, smooth: float = 1.):
     """ Computes the F1 score
-    F1 = 2 * (precision * recall + smooth) / (precision + recall + smooth)
-    This is the same as (TP + smmoth ) / (TP + (FP + FN) / 2 + smooth)
+    F1 = 2 * (precision * recall) / (precision + recall)
+    This is the same as TP / (TP + (FP + FN) / 2)
 
     """
     precision_score = precision(p, gt, smooth=smooth)
@@ -75,7 +74,7 @@ def mean_ap(p: torch.Tensor, gt: torch.Tensor, smooth: float = 1.):
     for conf in range(11):
         _p = (p > (conf / 10.)).float()
         _gt = (gt > (conf / 10.)).float()
-        print(_p)
+        # print(_p)
         precisions.append(precision(_p, _gt, smooth).mean())
         recalls.append(sensitivity(_p, _gt, smooth).mean())
 
@@ -84,8 +83,8 @@ def mean_ap(p: torch.Tensor, gt: torch.Tensor, smooth: float = 1.):
     diffs = recalls[1:] - recalls[:-1]
 
     ap = torch.sum(precisions[:-1] * diffs)
-    print(f'precisions: {precisions}')
-    print(f'recalls: {recalls}')
+    # print(f'precisions: {precisions}')
+    # print(f'recalls: {recalls}')
     return ap
 
 
@@ -104,7 +103,7 @@ def specificity(p, gt, smooth: float = 1.):
     p = p[:, 0].contiguous().view(p.shape[0], -1)
     gt = gt[:, 0].contiguous().view(gt.shape[0], -1)
     tn = ((gt + p) == 0).sum(dim=1)
-    fp = (p - gt).sum(dim=1)
+    fp = ((1 - gt) * p).sum(dim=1)
     return (tn + smooth) / (tn + fp + smooth)
 # the section ends here
 

@@ -34,7 +34,8 @@ class DiceLoss(nn.Module):
         intersection = (_preds * _targets).sum()
         # approximation of union for computational efficiency
         appx_union = _preds.sum() + _targets.sum()
-        dice_coeff = (intersection + self.smooth) / (appx_union + self.smooth)
+        dice_coeff = (2 * intersection + self.smooth) / (
+            appx_union + self.smooth)
         # dice_loss = 1 - dice_coeff
         return 1 - dice_coeff
 # the cell ends here
@@ -49,20 +50,13 @@ class FocalLoss(nn.Module):
         self.gamma = gamma
 
     def forward(self, preds: Tensor, targets: Tensor) -> Tensor:
-        _preds = preds.view(-1)
-        _targets = targets.view(-1)
-        return self.focal_loss_logits(_preds, _targets, self.gamma, self.alpha)
-
-    def focal_loss_logits(self, output: Tensor, target: Tensor, gamma: float,
-                          alpha: float) -> Tensor:
-        target = target.type(output.type())
-        logpt = F.binary_cross_entropy_with_logits(
-            input=output, target=target, reduction='none'
+        targets = targets.type(preds.type())
+        logpt = F.binary_cross_entropy(
+            input=preds, target=targets, reduction='none'
         )
         pt = torch.exp(-logpt)
-        focal_term = (1.0 - pt).pow(gamma)
-        loss = focal_term * logpt
-        loss *= alpha * target + (1 - alpha) * (1 - target)
+        alpha_factor = torch.where(targets == 1, self.alpha, 1 - self.alpha)
+        loss = alpha_factor * (1 - pt) ** self.gamma * logpt
         return loss.mean()
 
 
@@ -89,14 +83,14 @@ class TverskyLoss(nn.Module):
         fn = (_targets * (1 - _preds)).sum()
         fp = ((1 - _targets) * _preds).sum()
         return (tp + self.smooth) / (
-            tp + self.alpha * fn + (1 - self.alpha) * fp + self.smooth)
+            tp + self.alpha * fp + (1 - self.alpha) * fn + self.smooth)
 
     def forward(self, preds: Tensor, targets: Tensor) -> Tensor:
         return 1 - self.tversky(preds, targets)
 
 
 class FocalTverskyLoss(nn.Module):
-    def __init__(self, alpha: float = .7, gamma: float = .75,
+    def __init__(self, alpha: float = .3, gamma: float = .75,
                  smooth: float = 1.) -> None:
         super().__init__()
         self.alpha = alpha

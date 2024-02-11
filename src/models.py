@@ -1,4 +1,5 @@
 import torch
+from torch import Tensor
 import torch.nn as nn
 from torchvision.ops import deform_conv2d
 
@@ -8,33 +9,29 @@ class ConvBlock(nn.Module):
     """ CNN block layer for U-Net
 
     Attributes:
-        in_channels: the number of input channels
-        features: the number of output channels
+        in_channels: No. of input channels
+        features: No. of output channels
     """
     def __init__(self, in_channels: int, features: int) -> None:
         super(ConvBlock, self).__init__()
-        self.conv1 = nn.Sequential(
+        self.block = nn.Sequential(
             nn.Conv2d(in_channels=in_channels, out_channels=features,
                       kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(num_features=features),
             nn.ReLU(),
-        )
-        self.conv2 = nn.Sequential(
             nn.Conv2d(in_channels=features, out_channels=features,
                       kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(num_features=features),
             nn.ReLU(),
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         """ forward pass
 
         Args:
             x: input tensor (b, ch, h, w)
         """
-        x = self.conv1(x)
-        x = self.conv2(x)
-        return x
+        return self.block(x)
 # The section ends here
 
 
@@ -43,52 +40,49 @@ class UNet(nn.Module):
     """ U-Net model
 
     Attributes:
-        in_channels: the number of input channels
-        out_channels: the number of classes
-        features: the number of the base featuress
+        in_channels: No. of input channels
+        out_channels: No. of classes
+        features: No. of the base featuress
     """
     def __init__(self, in_channels: int, out_channels: int = 1,
-                 features: int = 32) -> None:
+                 features: int = 32, logits: bool = False) -> None:
         super(UNet, self).__init__()
+        self.logits = logits
         # encoder layers
         self.p = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.e1 = ConvBlock(in_channels=in_channels, features=features)
-        self.e2 = ConvBlock(in_channels=features, features=features*2)
-        self.e3 = ConvBlock(in_channels=features*2, features=features*4)
-        self.e4 = ConvBlock(in_channels=features*4, features=features*8)
+        self.e1 = ConvBlock(in_channels, features)
+        self.e2 = ConvBlock(features, features*2)
+        self.e3 = ConvBlock(features*2, features*4)
+        self.e4 = ConvBlock(features*4, features*8)
         # bottom
-        self.bottolneck = ConvBlock(in_channels=features*8,
-                                    features=features*16)
+        self.bottolneck = ConvBlock(features*8, features*16)
         # decoder layers
         self.up4 = nn.ConvTranspose2d(
             in_channels=features*16, out_channels=features*8,
             kernel_size=2, stride=2
             )
         self.d4 = ConvBlock(in_channels=features*16, features=features*8)
-
         self.up3 = nn.ConvTranspose2d(
             in_channels=features*8, out_channels=features*4,
             kernel_size=2, stride=2
-        )
+            )
         self.d3 = ConvBlock(in_channels=features*8, features=features*4)
-
         self.up2 = nn.ConvTranspose2d(
             in_channels=features*4, out_channels=features*2,
             kernel_size=2, stride=2
-        )
+            )
         self.d2 = ConvBlock(in_channels=features*4, features=features*2)
-
         self.up1 = nn.ConvTranspose2d(
             in_channels=features*2, out_channels=features,
             kernel_size=2, stride=2
-        )
+            )
         self.d1 = ConvBlock(in_channels=features*2, features=features)
-
         self.out_conv = nn.Conv2d(
-            in_channels=features, out_channels=out_channels, kernel_size=1
-        )
+            in_channels=features, out_channels=out_channels, kernel_size=1,
+            bias=False
+            )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         """ forward pass
 
         Args:
@@ -114,6 +108,8 @@ class UNet(nn.Module):
         d1 = self.up1(d2)
         d1 = torch.cat(tensors=(d1, e1), dim=1)
         d1 = self.d1(d1)
+        if self.logits:
+            return self.out_conv(d1)
         # output convolution with sigmoid
         return torch.sigmoid(self.out_conv(d1))
 # the section ends here
@@ -125,24 +121,24 @@ class AttentionGate(nn.Module):
         super(AttentionGate, self).__init__()
         self.gating_sig = nn.Sequential(
             nn.Conv2d(gate_features, attention_coeffs, kernel_size=1,
-                      padding=0, bias=True),
-            nn.BatchNorm2d(attention_coeffs)
+                      bias=False),
+            nn.BatchNorm2d(attention_coeffs),
         )
         self.skip_x = nn.Sequential(
             nn.Conv2d(skip_features, attention_coeffs, kernel_size=2,
-                      stride=2, padding=0, bias=True),
-            nn.BatchNorm2d(attention_coeffs)
+                      stride=2, bias=False),
+            nn.BatchNorm2d(attention_coeffs),
         )
         self.relu = nn.ReLU()
         self.psi = nn.Sequential(
-            nn.Conv2d(attention_coeffs, 1, kernel_size=1, stride=1, padding=0,
-                      bias=True),
+            nn.Conv2d(attention_coeffs, 1, kernel_size=1, stride=1,
+                      bias=False),
             nn.BatchNorm2d(1),
-            nn.Sigmoid()
+            nn.Sigmoid(),
         )
         self.resampler = nn.Upsample(scale_factor=2)
 
-    def forward(self, gate: torch.Tensor, skip: torch.Tensor) -> torch.Tensor:
+    def forward(self, gate: Tensor, skip: Tensor) -> Tensor:
         g = self.gating_sig(gate)
         x = self.skip_x(skip)
         gx = self.relu(g + x)
@@ -158,13 +154,12 @@ class AttentionGatedUNet(nn.Module):
         super(AttentionGatedUNet, self).__init__()
         self.p = nn.MaxPool2d(kernel_size=2, stride=2)
         # encoder
-        self.e1 = ConvBlock(in_channels=in_channels, features=features)
-        self.e2 = ConvBlock(in_channels=features, features=features*2)
-        self.e3 = ConvBlock(in_channels=features*2, features=features*4)
-        self.e4 = ConvBlock(in_channels=features*4, features=features*8)
+        self.e1 = ConvBlock(in_channels, features)
+        self.e2 = ConvBlock(features, features*2)
+        self.e3 = ConvBlock(features*2, features*4)
+        self.e4 = ConvBlock(features*4, features*8)
         # bottom
-        self.bottolneck = ConvBlock(in_channels=features*8,
-                                    features=features*16)
+        self.bottolneck = ConvBlock(features*8, features*16)
         # attention decoder
         self.ag4 = AttentionGate(
             gate_features=features*16, skip_features=features*8,
@@ -206,7 +201,7 @@ class AttentionGatedUNet(nn.Module):
             in_channels=features, out_channels=out_channels, kernel_size=1
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         # encoding
         e1 = self.e1(x)
         e2 = self.e2(self.p(e1))
@@ -256,13 +251,13 @@ class DCNv2(nn.Module):
             in_channels=in_channels,
             out_channels=out_channels,
             kernel_size=kernel_size, stride=stride, padding=padding, bias=bias
-        )
+            )
         # offset convolution
         self.offset = nn.Conv2d(
             in_channels=in_channels,
             out_channels=2 * kh * kw,
             kernel_size=kernel_size, stride=stride, padding=padding, bias=bias
-        )
+            )
         # weights are initialized to zero in the original paper
         nn.init.constant_(self.offset.weight, 0.)
         if bias:
@@ -271,9 +266,8 @@ class DCNv2(nn.Module):
         self.mask_conv = nn.Conv2d(
             in_channels=in_channels,
             out_channels=kh * kw,
-            kernel_size=kernel_size,
-            stride=stride, padding=padding, bias=bias
-        )
+            kernel_size=kernel_size, stride=stride, padding=padding, bias=bias
+            )
         # weights are initialized to zero in the original paper
         nn.init.constant_(self.mask_conv.weight, 0.)
         if bias:
@@ -291,21 +285,39 @@ class DCNv2(nn.Module):
 class DCNBlock(nn.Module):
     def __init__(self, in_channels: int, features: int) -> None:
         super().__init__()
-        self.dcn1 = nn.Sequential(
-            DCNv2(in_channels=in_channels, out_channels=features),
-            nn.BatchNorm2d(num_features=features),
+        self.block = nn.Sequential(
+            nn.Conv2d(in_channels=in_channels, out_channels=features,
+                      kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(features),
             nn.ReLU(),
-        )
-        self.dcn2 = nn.Sequential(
-            DCNv2(in_channels=features, out_channels=features),
-            nn.BatchNorm2d(num_features=features),
+            DCNv2(features, features),
+            nn.BatchNorm2d(features),
             nn.ReLU(),
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.dcn1(x)
-        x = self.dcn2(x)
-        return x
+    def forward(self, x: Tensor) -> Tensor:
+        return self.block(x)
+
+
+class DCNUpBlock(nn.Module):
+    def __init__(self, in_channels: int, features: int) -> None:
+        super().__init__()
+        self.block = nn.Sequential(
+            nn.Conv2d(in_channels=in_channels, out_channels=features,
+                      kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(features),
+            nn.ReLU(),
+            DCNv2(features, features),
+            nn.BatchNorm2d(features),
+            nn.ReLU(),
+            nn.Conv2d(in_channels=features, out_channels=features,
+                      kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(features),
+            nn.ReLU(),
+        )
+
+    def forward(self, x: Tensor) -> Tensor:
+        return self.block(x)
 
 
 class DeformableUNet(nn.Module):
@@ -314,34 +326,33 @@ class DeformableUNet(nn.Module):
         super().__init__()
         # encoders
         self.p = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.e1 = DCNBlock(in_channels=in_channels, features=features)
-        self.e2 = DCNBlock(in_channels=features, features=features*2)
-        self.e3 = DCNBlock(in_channels=features*2, features=features*4)
-        self.e4 = DCNBlock(in_channels=features*4, features=features*8)
+        self.e1 = ConvBlock(in_channels, features)
+        self.e2 = ConvBlock(features, features*2)
+        self.e3 = ConvBlock(features*2, features*4)
+        self.e4 = ConvBlock(features*4, features*8)
         # bottom
-        self.bottolneck = DCNBlock(in_channels=features*8,
-                                   features=features*16)
+        self.bottolneck = ConvBlock(features*8, features*16)
         # decoders
         self.up4 = nn.ConvTranspose2d(
             in_channels=features*16, out_channels=features*8,
             kernel_size=2, stride=2
         )
-        self.d4 = DCNBlock(in_channels=features*16, features=features*8)
+        self.d4 = DCNUpBlock(in_channels=features*16, features=features*8)
         self.up3 = nn.ConvTranspose2d(
             in_channels=features*8, out_channels=features*4,
             kernel_size=2, stride=2
         )
-        self.d3 = DCNBlock(in_channels=features*8, features=features*4)
+        self.d3 = DCNUpBlock(in_channels=features*8, features=features*4)
         self.up2 = nn.ConvTranspose2d(
             in_channels=features*4, out_channels=features*2,
             kernel_size=2, stride=2
         )
-        self.d2 = DCNBlock(in_channels=features*4, features=features*2)
+        self.d2 = DCNUpBlock(in_channels=features*4, features=features*2)
         self.up1 = nn.ConvTranspose2d(
             in_channels=features*2, out_channels=features*1,
             kernel_size=2, stride=2
         )
-        self.d1 = DCNBlock(in_channels=features*2, features=features*1)
+        self.d1 = DCNUpBlock(in_channels=features*2, features=features*1)
         self.out_conv = nn.Conv2d(
             in_channels=features, out_channels=out_channels, kernel_size=1
         )
