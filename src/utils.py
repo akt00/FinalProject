@@ -12,7 +12,6 @@ from torch.utils.data import DataLoader
 from .metrics import iou, mean_ap, precision, sensitivity, f1_score
 
 
-# the code in this section is originally written by Akihiro Tanimoto
 def train_one_epoch(model: Module, loss_fn: Module, optimizer: Optimizer,
                     data_loader: DataLoader, dev: device = device('cuda')
                     ) -> Tensor:
@@ -47,10 +46,8 @@ def train_one_epoch(model: Module, loss_fn: Module, optimizer: Optimizer,
             print(f'loss: {loss:.5f} [{current}/{dataset_size}]')
 
     return avg_loss / batch
-# the code ends here
 
 
-# the code in this section is originally written by Akihiro Tanimoto
 def evaluate(model: Module, loss_fn: Module, data_loader: DataLoader,
              dev: device = device('cuda')) -> tuple:
     """ Evalutes the model on the test dataset
@@ -65,7 +62,7 @@ def evaluate(model: Module, loss_fn: Module, data_loader: DataLoader,
     """
     model.eval().to(device=dev)
     num_batches = len(data_loader)
-    test_loss, test_miou, test_map = .0, .0, .0, .0
+    test_loss, test_miou, test_map = .0, .0, .0
     test_precision, test_sensitivity, test_f1 = .0, .0, .0
     with torch.no_grad():
         for images, targets in data_loader:
@@ -90,10 +87,8 @@ def evaluate(model: Module, loss_fn: Module, data_loader: DataLoader,
           f' Recall: {test_sensitivity:.4f} F1: {test_f1:.4f}')
 
     return test_loss, test_miou, test_map, test_precision, test_sensitivity, test_f1
-# the code ends here
 
 
-# the code in this section is originally written by Akihiro Tanimoto
 def export2onnx(model: torch.nn.Module, model_name: str, input_shape: tuple,
                 dev: device = device('cuda'), simplify=True) -> None:
     """ Exports pytorch model to ONNX format
@@ -117,10 +112,10 @@ def export2onnx(model: torch.nn.Module, model_name: str, input_shape: tuple,
         model_sim, check = onnxsim.simplify(model)
         assert check
         onnx.save(model_sim, model_name)
-# the code ends here
 
 
 class WarmupCosineAnnealingLR(_LRScheduler):
+    """ Cosine Annealing learning rate scheduler with warmup """
     def __init__(self, optimzer: torch.optim.Optimizer, multiplier: float,
                  warmup_epoch: int, epochs: int, min_lr: float = 1e-5,
                  last_epoch: int = -1) -> None:
@@ -135,7 +130,8 @@ class WarmupCosineAnnealingLR(_LRScheduler):
         super(WarmupCosineAnnealingLR, self).__init__(optimizer=optimzer,
                                                       last_epoch=last_epoch)
 
-    def get_lr(self):
+    def get_lr(self) -> list:
+        """ returns the learning rate """
         if self.T_max + self.warmup_epoch < self.last_epoch:
             return [self.eta_min for _ in self.base_lrs]
         elif self.last_epoch > self.warmup_epoch - 1:

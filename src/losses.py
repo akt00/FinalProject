@@ -4,31 +4,15 @@ import torch.nn.functional as F
 from torch import Tensor
 
 
-# the code in this section is originally written by Akihiro Tanimoto
 class DiceLoss(nn.Module):
-    """ The custom class for dice loss
-
-    This loss can only be used for binary segmentation tasks
-
-    Attributes:
-        kwargs:
-            smoothing (float): avoids division by zero. default is 1.0
-    """
+    """ Dice Loss for binary segmentation """
     def __init__(self, smooth: float = 1.) -> None:
         super(DiceLoss, self).__init__()
-        # smoothing value to avoid division by zero
+        # avoid division by zero
         self.smooth = smooth
 
     def forward(self, preds: Tensor, targets: Tensor) -> Tensor:
-        """ Returns the mean dice loss
-
-        Attributes:
-            preds: prediction results from the troch model. (b, ch, h, w)
-            targets: ground truth labels. (b, ch, h, w)
-
-        Returns:
-            The computed dice loss = (1 - dice coefficient)
-        """
+        """ forward pass """
         _preds = preds[:, 0].contiguous().view(-1)
         _targets = targets[:, 0].contiguous().view(-1)
         intersection = (_preds * _targets).sum()
@@ -38,10 +22,10 @@ class DiceLoss(nn.Module):
             appx_union + self.smooth)
         # dice_loss = 1 - dice_coeff
         return 1 - dice_coeff
-# the cell ends here
 
 
 class FocalLoss(nn.Module):
+    """ Focal Loss for imbanced classes """
     mode = 'binary'
 
     def __init__(self, alpha: float = .25, gamma: float = 2.) -> None:
@@ -50,6 +34,7 @@ class FocalLoss(nn.Module):
         self.gamma = gamma
 
     def forward(self, preds: Tensor, targets: Tensor) -> Tensor:
+        """ forward pass """
         targets = targets.type(preds.type())
         logpt = F.binary_cross_entropy(
             input=preds, target=targets, reduction='none'
@@ -61,16 +46,20 @@ class FocalLoss(nn.Module):
 
 
 class FocalDiceLoss(nn.Module):
-    def __init__(self) -> None:
+    """ Combination of Focal Loss and Dice Loss"""
+    def __init__(self, weight: float = 2) -> None:
         super().__init__()
         self.focal_loss = FocalLoss()
         self.dice_loss = DiceLoss()
+        self.weight = weight
 
     def forward(self, preds: Tensor, targets: Tensor) -> Tensor:
-        return self.focal_loss(preds, targets) + self.dice_loss(preds, targets)
+        """ forward pass """
+        return self.focal_loss(preds, targets) * self.weight + self.dice_loss(preds, targets)
 
 
 class TverskyLoss(nn.Module):
+    """ Tversky Loss for penalizing FP/FN """
     def __init__(self, alpha: float = .7, smooth: float = 1.) -> None:
         super().__init__()
         self.alpha = alpha
@@ -86,10 +75,12 @@ class TverskyLoss(nn.Module):
             tp + self.alpha * fp + (1 - self.alpha) * fn + self.smooth)
 
     def forward(self, preds: Tensor, targets: Tensor) -> Tensor:
+        """ forward pass """
         return 1 - self.tversky(preds, targets)
 
 
 class FocalTverskyLoss(nn.Module):
+    """ Focal Tversky Loss for small lesion segmentation """
     def __init__(self, alpha: float = .3, gamma: float = .75,
                  smooth: float = 1.) -> None:
         super().__init__()
@@ -99,11 +90,11 @@ class FocalTverskyLoss(nn.Module):
         self.tversky = TverskyLoss(alpha=self.alpha, smooth=self.smooth)
 
     def forward(self, preds: Tensor, targets: Tensor) -> Tensor:
+        """ forward pass """
         tversky_score = self.tversky(preds, targets)
         return (1 - tversky_score).pow(self.gamma)
 
 
-# the code in this section is originally written by Akihiro Tanimoto
 class BCEDiceLoss(nn.Module):
     """ Binary cross entropy loss with dice loss """
     def __init__(self) -> None:
@@ -112,14 +103,5 @@ class BCEDiceLoss(nn.Module):
         self.dice_loss = DiceLoss()
 
     def forward(self, preds: Tensor, targets: Tensor) -> Tensor:
-        """ forward pass for loss computation
-
-        Attributes:
-            preds: predictions from torch's model. (b, ch, h, w)
-            targets: ground truth labels. (b, ch, h, w)
-
-        Returns (torch.Tensor):
-            The computated bce dice loss.
-        """
+        """ forward pass """
         return self.bce_loss(preds, targets) + self.dice_loss(preds, targets)
-# the cell ends here

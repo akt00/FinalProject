@@ -4,7 +4,6 @@ import cv2 as cv
 from torch.utils.data import Dataset
 
 
-# the code in this section is originally written by Akihiro Tanimoto
 class BrainDataset(Dataset):
     """ Extention of torch's Dataset class
 
@@ -84,4 +83,3 @@ class BrainDataset(Dataset):
             if self.target_transform:
                 label = self.target_transform(label)
             return image, label
-# the cell ends here

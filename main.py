@@ -23,4 +23,4 @@ if __name__ == '__main__':
         cv.imshow('Input Image', img)
         cv.imshow('Model Prediction', pred)
         cv.imshow('Ground Truth', gt)
-        cv.waitKey(250)
+        cv.waitKey(100)

@@ -4,7 +4,6 @@ from torch import Tensor
 from torchvision.ops import deform_conv2d
 
 
-# the code in this section is originally written by Akihiro Tanimoto
 class ConvBlock(nn.Module):
     """ CNN block layer for U-Net
 
@@ -28,10 +27,8 @@ class ConvBlock(nn.Module):
     def forward(self, x: Tensor) -> Tensor:
         """ forward pass (b, ch, h, w) """
         return self.block(x)
-# The section ends here
 
 
-# the code in this section is originally written by Akihiro Tanimoto
 class UNet(nn.Module):
     """ U-Net model
 
@@ -104,10 +101,8 @@ class UNet(nn.Module):
             return self.out_conv(d1)
         # output convolution with sigmoid
         return torch.sigmoid(self.out_conv(d1))
-# the section ends here
 
 
-# the code in this section is originally written by Akihiro Tanimoto
 class AttentionGate(nn.Module):
     """ Implementation of Attention Gate
 
@@ -152,10 +147,8 @@ class AttentionGate(nn.Module):
         coeffs = self.resampler(coeffs)
         out = skip * coeffs
         return out
-# the section ends here
 
 
-# the code in this section is originally written by Akihiro Tanimoto
 class AttentionGatedUNet(nn.Module):
     """ Implementation of U-Net with Attention Gate
 
@@ -247,10 +240,8 @@ class AttentionGatedUNet(nn.Module):
         d1 = torch.cat(tensors=(d1, s1), dim=1)
         d1 = self.d1(d1)
         return torch.sigmoid(self.out_conv(d1))
-# the section ends here
 
 
-# the code in this section is originally written by Akihiro Tanimoto
 class DCNv2(nn.Module):
     """ Implementatino of Deformable Convolution
 
@@ -309,10 +300,8 @@ class DCNv2(nn.Module):
                             bias=self.conv.bias, stride=self.stride,
                             padding=self.padding, mask=mask)
         return out
-# the section ends here
 
 
-# the code in this section is originally written by Akihiro Tanimoto
 class DCNBlock(nn.Module):
     """ Convolution block with Deformable Convolution for U-Net
 
@@ -339,10 +328,8 @@ class DCNBlock(nn.Module):
     def forward(self, x: Tensor) -> Tensor:
         """ forward pass (b, ch, h, w) """
         return self.block(x)
-# the section ends here
 
 
-# the code in this section is originally written by Akihiro Tanimoto
 class DeformableUNet(nn.Module):
     """ Implementation of U-Net with Deformable Convolution
 
@@ -410,10 +397,8 @@ class DeformableUNet(nn.Module):
         d1 = torch.cat(tensors=(d1, e1), dim=1)
         d1 = self.d1(d1)
         return torch.sigmoid(self.out_conv(d1))
-# the section ends here
 
 
-# the code in this section is originally written by Akihiro Tanimoto
 class AttentionGatedDeformableUNet(nn.Module):
     """ Implementation of U-Net with Attention Gate and Deformable Convolution
 
@@ -506,4 +491,3 @@ class AttentionGatedDeformableUNet(nn.Module):
         d1 = torch.cat(tensors=(d1, s1), dim=1)
         d1 = self.d1(d1)
         return torch.sigmoid(self.out_conv(d1))
-# the section ends here
