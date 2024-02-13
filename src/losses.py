@@ -47,7 +47,7 @@ class FocalLoss(nn.Module):
 
 class FocalDiceLoss(nn.Module):
     """ Combination of Focal Loss and Dice Loss"""
-    def __init__(self, weight: float = 2) -> None:
+    def __init__(self, weight: float = 1) -> None:
         super().__init__()
         self.focal_loss = FocalLoss()
         self.dice_loss = DiceLoss()
@@ -55,7 +55,8 @@ class FocalDiceLoss(nn.Module):
 
     def forward(self, preds: Tensor, targets: Tensor) -> Tensor:
         """ forward pass """
-        return self.focal_loss(preds, targets) * self.weight + self.dice_loss(preds, targets)
+        return self.focal_loss(preds, targets) * self.weight + \
+            self.dice_loss(preds, targets)
 
 
 class TverskyLoss(nn.Module):

@@ -4,105 +4,6 @@ from torch import Tensor
 from torchvision.ops import deform_conv2d
 
 
-class ConvBlock(nn.Module):
-    """ CNN block layer for U-Net
-
-    Attributes:
-        in_channels: No. of input channels
-        features: No. of output channels
-    """
-    def __init__(self, in_channels: int, features: int) -> None:
-        super(ConvBlock, self).__init__()
-        self.block = nn.Sequential(
-            nn.Conv2d(in_channels=in_channels, out_channels=features,
-                      kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(num_features=features),
-            nn.ReLU(),
-            nn.Conv2d(in_channels=features, out_channels=features,
-                      kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(num_features=features),
-            nn.ReLU(),
-        )
-
-    def forward(self, x: Tensor) -> Tensor:
-        """ forward pass (b, ch, h, w) """
-        return self.block(x)
-
-
-class UNet(nn.Module):
-    """ U-Net model
-
-    Attributes:
-        in_channels: No. of input channels
-        out_channels: No. of classes
-        features: No. of the base featuress
-    """
-    def __init__(self, in_channels: int, out_channels: int = 1,
-                 features: int = 32, logits: bool = False) -> None:
-        super(UNet, self).__init__()
-        self.logits = logits
-        # encoder layers
-        self.p = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.e1 = ConvBlock(in_channels, features)
-        self.e2 = ConvBlock(features, features*2)
-        self.e3 = ConvBlock(features*2, features*4)
-        self.e4 = ConvBlock(features*4, features*8)
-        # bottom
-        self.neck = ConvBlock(features*8, features*16)
-        # decoder layers
-        self.up4 = nn.ConvTranspose2d(
-            in_channels=features*16, out_channels=features*8,
-            kernel_size=2, stride=2, bias=False
-            )
-        self.d4 = ConvBlock(features*16, features*8)
-        self.up3 = nn.ConvTranspose2d(
-            in_channels=features*8, out_channels=features*4,
-            kernel_size=2, stride=2, bias=False
-            )
-        self.d3 = ConvBlock(features*8, features*4)
-        self.up2 = nn.ConvTranspose2d(
-            in_channels=features*4, out_channels=features*2,
-            kernel_size=2, stride=2, bias=False
-            )
-        self.d2 = ConvBlock(features*4, features*2)
-        self.up1 = nn.ConvTranspose2d(
-            in_channels=features*2, out_channels=features,
-            kernel_size=2, stride=2, bias=False
-            )
-        self.d1 = ConvBlock(features*2, features)
-        self.out_conv = nn.Conv2d(
-            in_channels=features, out_channels=out_channels, kernel_size=1,
-            bias=False
-            )
-
-    def forward(self, x: Tensor) -> Tensor:
-        """ forward pass (b, ch, h, w) """
-        # encoding layers
-        e1 = self.e1(x)
-        e2 = self.e2(self.p(e1))
-        e3 = self.e3(self.p(e2))
-        e4 = self.e4(self.p(e3))
-        # bottleneck layer
-        neck = self.neck(self.p(e4))
-        # decoding layers
-        d4 = self.up4(neck)
-        d4 = torch.cat(tensors=(d4, e4), dim=1)
-        d4 = self.d4(d4)
-        d3 = self.up3(d4)
-        d3 = torch.cat(tensors=(d3, e3), dim=1)
-        d3 = self.d3(d3)
-        d2 = self.up2(d3)
-        d2 = torch.cat(tensors=(d2, e2), dim=1)
-        d2 = self.d2(d2)
-        d1 = self.up1(d2)
-        d1 = torch.cat(tensors=(d1, e1), dim=1)
-        d1 = self.d1(d1)
-        if self.logits:
-            return self.out_conv(d1)
-        # output convolution with sigmoid
-        return torch.sigmoid(self.out_conv(d1))
-
-
 class AttentionGate(nn.Module):
     """ Implementation of Attention Gate
 
@@ -147,99 +48,6 @@ class AttentionGate(nn.Module):
         coeffs = self.resampler(coeffs)
         out = skip * coeffs
         return out
-
-
-class AttentionGatedUNet(nn.Module):
-    """ Implementation of U-Net with Attention Gate
-
-    Attributes:
-        in_channels: No. of input channels
-        out_channels: No. of classes
-        features: No. of base feature maps
-    """
-    def __init__(self, in_channels: int, out_channels: int = 1,
-                 features: int = 32) -> None:
-        super(AttentionGatedUNet, self).__init__()
-        self.p = nn.MaxPool2d(kernel_size=2, stride=2)
-        # encoder
-        self.e1 = ConvBlock(in_channels, features)
-        self.e2 = ConvBlock(features, features*2)
-        self.e3 = ConvBlock(features*2, features*4)
-        self.e4 = ConvBlock(features*4, features*8)
-        # bottom
-        self.neck = ConvBlock(features*8, features*16)
-        # attention decoder
-        self.ag4 = AttentionGate(
-            gate_features=features*16, skip_features=features*8,
-            attention_coeffs=features*8
-            )
-        self.up4 = nn.ConvTranspose2d(
-            in_channels=features*16, out_channels=features*8,
-            kernel_size=2, stride=2, bias=False
-            )
-        self.d4 = ConvBlock(features*16, features*8)
-        self.ag3 = AttentionGate(
-            gate_features=features*8, skip_features=features*4,
-            attention_coeffs=features*4
-            )
-        self.up3 = nn.ConvTranspose2d(
-            in_channels=features*8, out_channels=features*4,
-            kernel_size=2, stride=2, bias=False
-            )
-        self.d3 = ConvBlock(features*8, features*4)
-        self.ag2 = AttentionGate(
-            gate_features=features*4, skip_features=features*2,
-            attention_coeffs=features*2
-            )
-        self.up2 = nn.ConvTranspose2d(
-            in_channels=features*4, out_channels=features*2,
-            kernel_size=2, stride=2, bias=False
-            )
-        self.d2 = ConvBlock(features*4, features*2)
-        self.ag1 = AttentionGate(
-            gate_features=features*2, skip_features=features*1,
-            attention_coeffs=features*1
-            )
-        self.up1 = nn.ConvTranspose2d(
-            in_channels=features*2, out_channels=features*1,
-            kernel_size=2, stride=2, bias=False
-            )
-        self.d1 = ConvBlock(features*2, features*1)
-        self.out_conv = nn.Conv2d(
-            in_channels=features, out_channels=out_channels, kernel_size=1,
-            bias=False
-            )
-
-    def forward(self, x: Tensor) -> Tensor:
-        """ forward pass (b, ch, h, w) """
-        # encoding
-        e1 = self.e1(x)
-        e2 = self.e2(self.p(e1))
-        e3 = self.e3(self.p(e2))
-        e4 = self.e4(self.p(e3))
-        # bottlneck
-        neck = self.neck(self.p(e4))
-        # attention gated decoding
-        s4 = self.ag4(neck, e4)
-        d4 = self.up4(neck)
-        d4 = torch.cat(tensors=(d4, s4), dim=1)
-        d4 = self.d4(d4)
-        # skip attention
-        s3 = self.ag3(d4, e3)
-        d3 = self.up3(d4)
-        d3 = torch.cat(tensors=(d3, s3), dim=1)
-        d3 = self.d3(d3)
-        # skip attention
-        s2 = self.ag2(d3, e2)
-        d2 = self.up2(d3)
-        d2 = torch.cat(tensors=(d2, s2), dim=1)
-        d2 = self.d2(d2)
-        # skip attention
-        s1 = self.ag1(d2, e1)
-        d1 = self.up1(d2)
-        d1 = torch.cat(tensors=(d1, s1), dim=1)
-        d1 = self.d1(d1)
-        return torch.sigmoid(self.out_conv(d1))
 
 
 class DCNv2(nn.Module):
@@ -302,15 +110,15 @@ class DCNv2(nn.Module):
         return out
 
 
-class DCNBlock(nn.Module):
-    """ Convolution block with Deformable Convolution for U-Net
+class ConvBlock(nn.Module):
+    """ Convolution block layer for U-Net
 
     Attributes:
         in_channels: No. of input channels
-        features: No. of output features
+        features: No. of output channels
     """
     def __init__(self, in_channels: int, features: int) -> None:
-        super().__init__()
+        super(ConvBlock, self).__init__()
         self.block = nn.Sequential(
             nn.Conv2d(in_channels=in_channels, out_channels=features,
                       kernel_size=3, padding=1, bias=False),
@@ -320,7 +128,32 @@ class DCNBlock(nn.Module):
                       kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(features),
             nn.ReLU(),
+            )
+
+    def forward(self, x: Tensor) -> Tensor:
+        """ forward pass (b, ch, h, w) """
+        return self.block(x)
+
+
+class DCNBlock(nn.Module):
+    """ Convolution block with Deformable Convolution for U-Net
+
+    Attributes:
+        in_channels: No. of input channels
+        features: No. of output features
+    """
+    def __init__(self, in_channels: int, features: int) -> None:
+        super(DCNBlock, self).__init__()
+        self.block = nn.Sequential(
+            nn.Conv2d(in_channels=in_channels, out_channels=features,
+                      kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(features),
+            nn.ReLU(),
             DCNv2(features, features),
+            nn.BatchNorm2d(features),
+            nn.ReLU(),
+            nn.Conv2d(in_channels=features, out_channels=features,
+                      kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(features),
             nn.ReLU(),
             )
@@ -330,113 +163,60 @@ class DCNBlock(nn.Module):
         return self.block(x)
 
 
-class DeformableUNet(nn.Module):
-    """ Implementation of U-Net with Deformable Convolution
+class UNet(nn.Module):
+    """ Base U-Net model
+
+    The base model can be extended with Attention Gate and Deformable \
+        Convolution
 
     Attributes:
         in_channels: No. of input channels
         out_channels: No. of classes
-        features: No. of base feature maps
+        features: No. of the base featuress
+        logits: applies sigmoid on model predictions if false
+        attention_gate: enable Attention Gate if true
+        dcn: replaces CNNs with Deformable Convolutions
     """
     def __init__(self, in_channels: int, out_channels: int = 1,
-                 features: int = 32) -> None:
-        super().__init__()
-        # encoders
+                 features: int = 32, logits: bool = False,
+                 attention_gate: bool = False, dcn: bool = False) -> None:
+        super(UNet, self).__init__()
+        self.logits = logits
+        self.attention_gate = attention_gate
+        self.dcn = dcn
+        # encoder layers
         self.p = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.e1 = ConvBlock(in_channels, features)
+        if self.dcn:
+            self.e1 = DCNBlock(in_channels, features)
+        else:
+            self.e1 = ConvBlock(in_channels, features)
         self.e2 = ConvBlock(features, features*2)
         self.e3 = ConvBlock(features*2, features*4)
         self.e4 = ConvBlock(features*4, features*8)
         # bottom
-        self.neck = ConvBlock(features*8, features*16)
-        # decoders
-        self.up4 = nn.ConvTranspose2d(
-            in_channels=features*16, out_channels=features*8,
-            kernel_size=2, stride=2, bias=False
-            )
-        self.d4 = ConvBlock(features*16, features*8)
-        self.up3 = nn.ConvTranspose2d(
-            in_channels=features*8, out_channels=features*4,
-            kernel_size=2, stride=2, bias=False
-            )
-        self.d3 = DCNBlock(features*8, features*4)
-        self.up2 = nn.ConvTranspose2d(
-            in_channels=features*4, out_channels=features*2,
-            kernel_size=2, stride=2, bias=False
-            )
-        self.d2 = DCNBlock(features*4, features*2)
-        self.up1 = nn.ConvTranspose2d(
-            in_channels=features*2, out_channels=features*1,
-            kernel_size=2, stride=2, bias=False
-            )
-        self.d1 = DCNBlock(features*2, features*1)
-        self.out_conv = nn.Conv2d(
-            in_channels=features, out_channels=out_channels, kernel_size=1
-            )
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """ forward pass (b, ch, h, w) """
-        # encoding layers
-        e1 = self.e1(x)
-        e2 = self.e2(self.p(e1))
-        e3 = self.e3(self.p(e2))
-        e4 = self.e4(self.p(e3))
-        # bottleneck layer
-        neck = self.neck(self.p(e4))
-        # decoding layres
-        d4 = self.up4(neck)
-        d4 = torch.cat(tensors=(d4, e4), dim=1)
-        d4 = self.d4(d4)
-        d3 = self.up3(d4)
-        d3 = torch.cat(tensors=(d3, e3), dim=1)
-        d3 = self.d3(d3)
-        d2 = self.up2(d3)
-        d2 = torch.cat(tensors=(d2, e2), dim=1)
-        d2 = self.d2(d2)
-        d1 = self.up1(d2)
-        d1 = torch.cat(tensors=(d1, e1), dim=1)
-        d1 = self.d1(d1)
-        return torch.sigmoid(self.out_conv(d1))
-
-
-class AttentionGatedDeformableUNet(nn.Module):
-    """ Implementation of U-Net with Attention Gate and Deformable Convolution
-
-    Attributes:
-        in_channels: No. of input channels
-        out_channels: No. of classes
-        features: No. of base feature maps
-    """
-    def __init__(self, in_channels: int, out_channels: int = 1,
-                 features: int = 32) -> None:
-        super(AttentionGatedDeformableUNet, self).__init__()
-        # encoder
-        self.p = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.e1 = DCNBlock(in_channels, features)
-        self.e2 = ConvBlock(features, features*2)
-        self.e3 = ConvBlock(features*2, features*4)
-        self.e4 = ConvBlock(features*4, features*8)
-        # bottom
-        self.neck = ConvBlock(features*8, features*16)
-        # decoders
-        self.up4 = nn.ConvTranspose2d(
-            in_channels=features*16, out_channels=features*8,
-            kernel_size=2, stride=2, bias=False
-            )
+        if self.dcn:
+            self.neck = DCNBlock(features*8, features*16)
+        else:
+            self.neck = ConvBlock(features*8, features*16)
+        # decoder layers
         self.ag4 = AttentionGate(
             gate_features=features*16, skip_features=features*8,
             attention_coeffs=features*8
             )
-        self.d4 = ConvBlock(features*16, features*8)
-        self.up3 = nn.ConvTranspose2d(
-            in_channels=features*8, out_channels=features*4,
+        self.up4 = nn.ConvTranspose2d(
+            in_channels=features*16, out_channels=features*8,
             kernel_size=2, stride=2, bias=False
             )
+        self.d4 = ConvBlock(features*16, features*8)
         self.ag3 = AttentionGate(
             gate_features=features*8, skip_features=features*4,
             attention_coeffs=features*4
             )
-        self.d3 = DCNBlock(features*8, features*4)
+        self.up3 = nn.ConvTranspose2d(
+            in_channels=features*8, out_channels=features*4,
+            kernel_size=2, stride=2, bias=False
+            )
+        self.d3 = ConvBlock(features*8, features*4)
         self.ag2 = AttentionGate(
             gate_features=features*4, skip_features=features*2,
             attention_coeffs=features*2
@@ -445,49 +225,55 @@ class AttentionGatedDeformableUNet(nn.Module):
             in_channels=features*4, out_channels=features*2,
             kernel_size=2, stride=2, bias=False
             )
-        self.d2 = DCNBlock(features*4, features*2)
-        self.up1 = nn.ConvTranspose2d(
-            in_channels=features*2, out_channels=features*1,
-            kernel_size=2, stride=2, bias=False
-            )
+        if self.dcn:
+            self.d2 = DCNBlock(features*4, features*2)
+        else:
+            self.d2 = ConvBlock(features*4, features*2)
         self.ag1 = AttentionGate(
             gate_features=features*2, skip_features=features*1,
             attention_coeffs=features*1
             )
-        self.d1 = DCNBlock(features*2, features*1)
+        self.up1 = nn.ConvTranspose2d(
+            in_channels=features*2, out_channels=features,
+            kernel_size=2, stride=2, bias=False
+            )
+        self.d1 = ConvBlock(features*2, features)
         self.out_conv = nn.Conv2d(
             in_channels=features, out_channels=out_channels, kernel_size=1,
             bias=False
             )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         """ forward pass (b, ch, h, w) """
-        # encoding
+        # encoding layers
         e1 = self.e1(x)
         e2 = self.e2(self.p(e1))
         e3 = self.e3(self.p(e2))
         e4 = self.e4(self.p(e3))
-        # bottlneck
+        # bottleneck layer
         neck = self.neck(self.p(e4))
-        # attention gated decoding
-        # print(bottle.shape, e4.shape)
-        s4 = self.ag4(neck, e4)
+        # decoding layers
+        if self.attention_gate:
+            e4 = self.ag4(neck, e4)
         d4 = self.up4(neck)
-        d4 = torch.cat(tensors=(d4, s4), dim=1)
+        d4 = torch.cat(tensors=(d4, e4), dim=1)
         d4 = self.d4(d4)
-        # skip connection
-        s3 = self.ag3(d4, e3)
+        if self.attention_gate:
+            e3 = self.ag3(d4, e3)
         d3 = self.up3(d4)
-        d3 = torch.cat(tensors=(d3, s3), dim=1)
+        d3 = torch.cat(tensors=(d3, e3), dim=1)
         d3 = self.d3(d3)
-        # skip connection
-        s2 = self.ag2(d3, e2)
+        if self.attention_gate:
+            e2 = self.ag2(d3, e2)
         d2 = self.up2(d3)
-        d2 = torch.cat(tensors=(d2, s2), dim=1)
+        d2 = torch.cat(tensors=(d2, e2), dim=1)
         d2 = self.d2(d2)
-        # skip connection
-        s1 = self.ag1(d2, e1)
+        if self.attention_gate:
+            e1 = self.ag1(d2, e1)
         d1 = self.up1(d2)
-        d1 = torch.cat(tensors=(d1, s1), dim=1)
+        d1 = torch.cat(tensors=(d1, e1), dim=1)
         d1 = self.d1(d1)
+        if self.logits:
+            return self.out_conv(d1)
+        # output convolution with sigmoid
         return torch.sigmoid(self.out_conv(d1))

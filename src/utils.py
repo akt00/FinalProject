@@ -8,8 +8,9 @@ from torch.optim.lr_scheduler import _LRScheduler
 from torch.optim import Optimizer
 from torch.nn import Module
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 # local modules
-from .metrics import iou, mean_ap, precision, sensitivity, f1_score
+from .metrics import iou, precision, sensitivity, f1_score
 
 
 def train_one_epoch(model: Module, loss_fn: Module, optimizer: Optimizer,
@@ -26,9 +27,8 @@ def train_one_epoch(model: Module, loss_fn: Module, optimizer: Optimizer,
     """
     model.train().to(device=dev)
     batch_size = None
-    dataset_size = len(data_loader.dataset)
     avg_loss = 0
-    for batch, (images, targets) in enumerate(data_loader):
+    for batch, (images, targets) in tqdm(enumerate(data_loader)):
         if batch_size is None:
             batch_size = len(images)
         optimizer.zero_grad()
@@ -38,12 +38,7 @@ def train_one_epoch(model: Module, loss_fn: Module, optimizer: Optimizer,
         loss.backward()
         optimizer.step()
         avg_loss += loss.item()
-        # prints out the current loss after each 25 batches
-        if batch % 25 == 0:
-            loss, current = loss.item(), (batch + 1) * batch_size
-            if current > dataset_size:
-                current = dataset_size
-            print(f'loss: {loss:.5f} [{current}/{dataset_size}]')
+    print(f'[Train]  Loss: {avg_loss / batch:.4f}')
 
     return avg_loss / batch
 
@@ -51,8 +46,6 @@ def train_one_epoch(model: Module, loss_fn: Module, optimizer: Optimizer,
 def evaluate(model: Module, loss_fn: Module, data_loader: DataLoader,
              dev: device = device('cuda')) -> tuple:
     """ Evalutes the model on the test dataset
-
-    Supported metrics: iou, specificity, sensitivity, youden's j index
 
     Args:
         model: PyTorch's model
@@ -62,31 +55,30 @@ def evaluate(model: Module, loss_fn: Module, data_loader: DataLoader,
     """
     model.eval().to(device=dev)
     num_batches = len(data_loader)
-    test_loss, test_miou, test_map = .0, .0, .0
-    test_precision, test_sensitivity, test_f1 = .0, .0, .0
+    _loss, _miou = .0, .0
+    _precision, _recall, _f1 = .0, .0, .0
     with torch.no_grad():
         for images, targets in data_loader:
             images, targets = images.to(device=dev), targets.to(device=dev)
             preds = model(images)
-            test_loss += loss_fn(preds, targets).item()
-            test_miou += iou((preds > .5).float(), targets).mean(0).item()
-            test_map += mean_ap((preds > .5).float(), targets).mean(0).item()
-            test_precision += precision((preds > .5).float(), targets).mean(0).item()
-            test_sensitivity += sensitivity((preds > .5).float(), targets).mean(0).item()
-            test_f1 += f1_score((preds > .5).float(), targets).mean(0).item()
-    # iou, sensitivity, specificity, youden's j index
-    test_loss /= num_batches
-    test_miou /= num_batches
-    test_map /= num_batches
-    test_precision /= num_batches
-    test_sensitivity /= num_batches
-    test_f1 /= num_batches
+            _loss += loss_fn(preds, targets).item()
+            _miou += iou((preds > .5).float(), targets).mean(0).item()
+            _precision += precision((preds > .5).float(), targets
+                                    ).mean(0).item()
+            _recall += sensitivity((preds > .5).float(), targets
+                                   ).mean(0).item()
+            _f1 += f1_score((preds > .5).float(), targets).mean(0).item()
+    # loss, miou, precision, recall, f1 score
+    _loss /= num_batches
+    _miou /= num_batches
+    _precision /= num_batches
+    _recall /= num_batches
+    _f1 /= num_batches
+    # shows the current metrics
+    print(f'[Test]  Loss: {_loss:.4f} mIoU: {_miou:.4f}'
+          f' Precision: {_precision:.4f} Recall: {_recall:.4f} F1: {_f1:.4f}')
 
-    print(f'Test Metrics: \n    Loss: {test_loss:.4f} mIoU: {test_miou:.4f}'
-          f' mAP: {test_map:.4f} Precision: {test_precision:.4f}'
-          f' Recall: {test_sensitivity:.4f} F1: {test_f1:.4f}')
-
-    return test_loss, test_miou, test_map, test_precision, test_sensitivity, test_f1
+    return _loss, _miou, _precision, _recall, _f1
 
 
 def export2onnx(model: torch.nn.Module, model_name: str, input_shape: tuple,
@@ -116,34 +108,28 @@ def export2onnx(model: torch.nn.Module, model_name: str, input_shape: tuple,
 
 class WarmupCosineAnnealingLR(_LRScheduler):
     """ Cosine Annealing learning rate scheduler with warmup """
-    def __init__(self, optimzer: torch.optim.Optimizer, multiplier: float,
-                 warmup_epoch: int, epochs: int, min_lr: float = 1e-5,
-                 last_epoch: int = -1) -> None:
-        self.multiplier = multiplier
-        if self.multiplier < 1.:
-            raise ValueError('multipiler should be 1 or above')
+    def __init__(self, optimzer: torch.optim.Optimizer, warmup_epoch: int,
+                 epochs: int, min_lr: float = 1e-5, last_epoch: int = -1
+                 ) -> None:
         self.warmup_epoch = warmup_epoch
         self.last_epoch = last_epoch
         self.eta_min = min_lr
         self.T_max = float(epochs - warmup_epoch)
         self.after_scheduler = True
-        super(WarmupCosineAnnealingLR, self).__init__(optimizer=optimzer,
-                                                      last_epoch=last_epoch)
+        super().__init__(optimizer=optimzer, last_epoch=last_epoch)
 
     def get_lr(self) -> list:
         """ returns the learning rate """
+        # returns the minimum lr after the max iterations
         if self.T_max + self.warmup_epoch < self.last_epoch:
             return [self.eta_min for _ in self.base_lrs]
+        # cosine annealing lr
         elif self.last_epoch > self.warmup_epoch - 1:
             return [self.eta_min + (base_lr - self.eta_min) *
                     (1 + math.cos(math.pi * (self.last_epoch -
                      self.warmup_epoch) / (self.T_max - 1))) / 2
                     for base_lr in self.base_lrs]
         # warmup
-        if self.multiplier == 1.:
-            return [base_lr * (float(self.last_epoch + 1) / self.warmup_epoch)
-                    for base_lr in self.base_lrs]
         else:
-            return [base_lr * ((self.multiplier - 1.) * self.last_epoch /
-                    self.warmup_epoch + 1.)
+            return [base_lr * (float(self.last_epoch + 1) / self.warmup_epoch)
                     for base_lr in self.base_lrs]

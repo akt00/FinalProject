@@ -2,7 +2,7 @@
 CM3070 Final Project Deep Learning on a Public Dataset
 
 # Author
-Name: Akihiro Tanimoto
+Name: Akihiro Tanimoto\
 Student ID: 210110083
 
 # Disclaimer
