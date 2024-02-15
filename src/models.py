@@ -277,3 +277,82 @@ class UNet(nn.Module):
             return self.out_conv(d1)
         # output convolution with sigmoid
         return torch.sigmoid(self.out_conv(d1))
+
+
+class ResidualBlock(nn.Module):
+    def __init__(self, in_channels: int, downsample: bool) -> None:
+        super().__init__()
+        self.downsample = downsample
+        self.relu = nn.ReLU()
+        if self.downsample:
+            out_channels = in_channels * 2
+            self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3,
+                                   stride=2, padding=1, bias=False)
+        else:
+            out_channels = in_channels
+            self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3,
+                                   stride=1, padding=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(out_channels)
+        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3,
+                               padding=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(out_channels)
+        self.conv3 = nn.Conv2d(in_channels, out_channels, kernel_size=1,
+                               stride=2, bias=False)
+
+    def forward(self, x: Tensor) -> Tensor:
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.relu(out)
+        out = self.conv2(out)
+        out = self.bn2(out)
+        # residual connection
+        if self.downsample:
+            x = self.conv3(x)
+        out += x
+        return self.relu(out)
+
+
+class ResNet18(nn.Module):
+    def __init__(self, in_channels: int = 3) -> None:
+        super().__init__()
+        self.conv1 = nn.Conv2d(in_channels, 64, kernel_size=7, stride=2,
+                               padding=3, bias=False)
+        self.relu = nn.ReLU()
+        self.mp = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.layer1 = nn.Sequential(
+            ResidualBlock(64, False),
+            ResidualBlock(64, False),
+        )
+        self.layer2 = nn.Sequential(
+            ResidualBlock(64, True),
+            ResidualBlock(128, False),
+        )
+        self.layer3 = nn.Sequential(
+            ResidualBlock(128, True),
+            ResidualBlock(256, False),
+        )
+        self.layer4 = nn.Sequential(
+            ResidualBlock(256, True),
+            ResidualBlock(512, False),
+        )
+        self.gap = nn.AdaptiveAvgPool2d(1)
+        self.mlp = nn.LazyLinear(1000)
+
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out',
+                                        nonlinearity='relu')
+            elif isinstance(m, nn.BatchNorm2d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+
+    def forward(self, x: Tensor) -> Tensor:
+        x = self.conv1(x)
+        x = self.relu(x)
+        x = self.mp(x)
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.layer3(x)
+        x = self.layer4(x)
+        x = self.gap(x)
+        return self.mlp(torch.flatten(x, start_dim=1))
