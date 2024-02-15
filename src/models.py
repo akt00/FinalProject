@@ -410,7 +410,7 @@ class SPPModule(nn.Module):
                           padding=self.dilations[i],
                           dilation=self.dilations[i],
                           bias=False),
-                nn.BatchNorm2d(in_channels//2),
+                nn.BatchNorm2d(out_channels),
                 nn.ReLU(),
             ))
         modules.append(SPPPooling(in_channels, out_channels))
@@ -437,12 +437,14 @@ class DeepLabv4(nn.Module):
         self.backbone = ResNetBackbone(in_channels)
         self.spp = SPPModule(512)
         self.encoder_conv = nn.Sequential(
+            SEModule(64),
             nn.Conv2d(64, 48, 1, bias=False),
             nn.BatchNorm2d(48),
             nn.ReLU(),
-        )
+            )
         # depth-wise separable conv with Squeeze and Excitation
         self.ds_conv1 = nn.Sequential(
+            SEModule(256),
             nn.Conv2d(256, 256, 3, padding=1,
                       groups=256, bias=False),
             nn.Conv2d(256, 256, 1, bias=False),
@@ -451,6 +453,7 @@ class DeepLabv4(nn.Module):
             nn.Upsample(scale_factor=4, mode='bilinear', align_corners=True),
         )
         self.ds_conv2 = nn.Sequential(
+            SEModule(304),
             nn.Conv2d(304, 304, 3, padding=1,
                       groups=304, bias=False),
             nn.Conv2d(304, 256, 1, bias=False),
