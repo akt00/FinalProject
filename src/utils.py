@@ -82,17 +82,15 @@ def evaluate(model: Module, loss_fn: Module, data_loader: DataLoader,
     return _loss, _miou, _precision, _recall, _f1
 
 
-def train_and_evaluate(model, augment: bool, oversample: bool):
+def train_and_evaluate(model, augment: bool, oversample: bool) -> None:
     train_pipeline = data_pipeline(True) if augment else data_pipeline(False)
     train_loader = BrainDatasetv2(True, train_pipeline, oversample)
     train_loader = DataLoader(train_loader, batch_size=64, shuffle=True,
                               num_workers=6, persistent_workers=True)
-    print(len(train_loader.dataset))
     test_pipeline = data_pipeline(False)
     test_loader = BrainDatasetv2(False, test_pipeline, oversample)
     test_loader = DataLoader(test_loader, batch_size=64, shuffle=False,
-                             num_workers=6, persistent_workers=True)
-    print(len(test_loader.dataset))
+                             num_workers=4, persistent_workers=True)
     loss = FocalDiceLoss()
     optimizer = torch.optim.RAdam(model.parameters())
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=30)
