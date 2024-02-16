@@ -1,5 +1,5 @@
 import math
-# 3rd party libs
+# external libs
 import onnx
 import onnxsim
 import torch
@@ -8,9 +8,12 @@ from torch.optim.lr_scheduler import _LRScheduler
 from torch.optim import Optimizer
 from torch.nn import Module
 from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 # local modules
 from .metrics import iou, precision, sensitivity, f1_score
+from .data_pipeline import data_pipeline, BrainDatasetv2
+from .losses import FocalDiceLoss
 
 
 def train_one_epoch(model: Module, loss_fn: Module, optimizer: Optimizer,
@@ -39,7 +42,6 @@ def train_one_epoch(model: Module, loss_fn: Module, optimizer: Optimizer,
         optimizer.step()
         avg_loss += loss.item()
     print(f'[Train]  Loss: {avg_loss / batch:.4f}')
-
     return avg_loss / batch
 
 
@@ -77,8 +79,45 @@ def evaluate(model: Module, loss_fn: Module, data_loader: DataLoader,
     # shows the current metrics
     print(f'[Test]  Loss: {_loss:.4f} mIoU: {_miou:.4f}'
           f' Precision: {_precision:.4f} Recall: {_recall:.4f} F1: {_f1:.4f}')
-
     return _loss, _miou, _precision, _recall, _f1
+
+
+def train_and_evaluate(model, augment: bool, oversample: bool):
+    train_pipeline = data_pipeline(True) if augment else data_pipeline(False)
+    train_loader = BrainDatasetv2(True, train_pipeline, oversample)
+    train_loader = DataLoader(train_loader, batch_size=64, shuffle=True,
+                              num_workers=6, persistent_workers=True)
+    print(len(train_loader.dataset))
+    test_pipeline = data_pipeline(False)
+    test_loader = BrainDatasetv2(False, test_pipeline, oversample)
+    test_loader = DataLoader(test_loader, batch_size=64, shuffle=False,
+                             num_workers=6, persistent_workers=True)
+    print(len(test_loader.dataset))
+    loss = FocalDiceLoss()
+    optimizer = torch.optim.RAdam(model.parameters())
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=30)
+    min_test_loss = 1e10  # keeps the minimum validation loss
+    writer = SummaryWriter()  # logs evaluation metrics
+    # train and evaluate
+    for epoch in range(30):
+        print(f'--------- Epoch {epoch + 1} ---------')
+        print(f'Current learning rate: {scheduler.get_last_lr()[0]:.5f}')
+        # train for one epoch
+        train_loss = train_one_epoch(model, loss, optimizer, train_loader)
+        writer.add_scalar('Loss/Train', train_loss, epoch)
+        # evaluate the model
+        (test_loss, test_miou, test_precision, test_sensitivity, test_f1) = \
+            evaluate(model, loss, test_loader)
+        writer.add_scalar('Loss/Test', test_loss, epoch)
+        writer.add_scalar('mIoU/Test', test_miou, epoch)
+        writer.add_scalar('Precision/Test', test_precision, epoch)
+        writer.add_scalar('Sensitivity/Test', test_sensitivity, epoch)
+        writer.add_scalar("F1 Score/Test", test_f1, epoch)
+        # save the best model
+        if test_loss < min_test_loss:
+            min_test_loss = test_loss
+            torch.save(model, 'models/model.pth')
+        scheduler.step()
 
 
 def export2onnx(model: torch.nn.Module, model_name: str, input_shape: tuple,

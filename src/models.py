@@ -294,6 +294,7 @@ class ResidualBlock(nn.Module):
         self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3,
                                padding=1, bias=False)
         self.bn2 = nn.BatchNorm2d(out_channels)
+        self.se_module = SEModule(out_channels)
         self.identity_conv = nn.Conv2d(in_channels, out_channels, 1,
                                        stride=stride, bias=False)
 
@@ -303,6 +304,8 @@ class ResidualBlock(nn.Module):
         out = self.relu(out)
         out = self.conv2(out)
         out = self.bn2(out)
+        # squeeze and excitation
+        out = self.se_module(out)
         # residual connection
         if self.identity:
             x = self.identity_conv(x)
@@ -401,7 +404,7 @@ class SPPModule(nn.Module):
         modules = []
         modules.append(nn.Sequential(
             nn.Conv2d(in_channels, out_channels, 1, bias=False),
-            nn.BatchNorm2d(in_channels//2),
+            nn.BatchNorm2d(out_channels),
             nn.ReLU(),
         ))
         for i in range(3):
@@ -437,27 +440,26 @@ class DeepLabv4(nn.Module):
         self.backbone = ResNetBackbone(in_channels)
         self.spp = SPPModule(512)
         self.encoder_conv = nn.Sequential(
-            SEModule(64),
             nn.Conv2d(64, 48, 1, bias=False),
             nn.BatchNorm2d(48),
             nn.ReLU(),
             )
         # depth-wise separable conv with Squeeze and Excitation
         self.ds_conv1 = nn.Sequential(
-            SEModule(256),
             nn.Conv2d(256, 256, 3, padding=1,
                       groups=256, bias=False),
             nn.Conv2d(256, 256, 1, bias=False),
             nn.BatchNorm2d(256),
+            SEModule(256),
             nn.ReLU(),
             nn.Upsample(scale_factor=4, mode='bilinear', align_corners=True),
         )
         self.ds_conv2 = nn.Sequential(
-            SEModule(304),
             nn.Conv2d(304, 304, 3, padding=1,
                       groups=304, bias=False),
             nn.Conv2d(304, 256, 1, bias=False),
             nn.BatchNorm2d(256),
+            SEModule(256),
             nn.ReLU(),
         )
         self.out_conv = nn.Sequential(

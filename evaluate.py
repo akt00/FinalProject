@@ -1,13 +1,12 @@
-# 3rd party libs
+# external libs
 import cv2 as cv
 import torch
-from torchvision.transforms import ToTensor
 # local modules
-from src.data_pipeline import BrainDataset
+from src.data_pipeline import BrainDatasetv2, data_pipeline
 
 
 if __name__ == '__main__':
-    test_loader = BrainDataset(False, ToTensor(), ToTensor())
+    test_loader = BrainDatasetv2(False, data_pipeline(False), False)
     model = torch.load('models/model.pth')
     device = torch.device('cuda')
     model.eval().to(device)
