@@ -7,7 +7,7 @@ from src.data_pipeline import BrainDatasetv2, data_pipeline
 
 if __name__ == '__main__':
     test_loader = BrainDatasetv2(False, data_pipeline(False), False)
-    model = torch.load('models/model.pth')
+    model = torch.load('models/deeplabv4.pth')
     device = torch.device('cuda')
     model.eval().to(device)
 

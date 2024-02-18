@@ -17,9 +17,8 @@ class DiceLoss(nn.Module):
         _targets = targets[:, 0].contiguous().view(-1)
         intersection = (_preds * _targets).sum()
         # approximation of union for computational efficiency
-        appx_union = _preds.sum() + _targets.sum()
-        dice_coeff = (2 * intersection + self.smooth) / (
-            appx_union + self.smooth)
+        union = _preds.sum() + _targets.sum()
+        dice_coeff = (2 * intersection + self.smooth) / (union + self.smooth)
         # dice_loss = 1 - dice_coeff
         return 1 - dice_coeff
 

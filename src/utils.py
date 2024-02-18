@@ -13,7 +13,7 @@ from tqdm import tqdm
 # local modules
 from .metrics import iou, precision, sensitivity, f1_score
 from .data_pipeline import data_pipeline, BrainDatasetv2
-from .losses import FocalDiceLoss
+from .losses import DiceLoss
 
 
 def train_one_epoch(model: Module, loss_fn: Module, optimizer: Optimizer,
@@ -47,7 +47,7 @@ def train_one_epoch(model: Module, loss_fn: Module, optimizer: Optimizer,
 
 def evaluate(model: Module, loss_fn: Module, data_loader: DataLoader,
              dev: device = device('cuda')) -> tuple:
-    """ Evalutes the model on the test dataset
+    """ Evalutes the model and logs the metrics on the test dataset
 
     Args:
         model: PyTorch's model
@@ -82,7 +82,9 @@ def evaluate(model: Module, loss_fn: Module, data_loader: DataLoader,
     return _loss, _miou, _precision, _recall, _f1
 
 
-def train_and_evaluate(model, augment: bool, oversample: bool) -> None:
+def train_and_evaluate(model: Module, model_name: str, augment: bool,
+                       oversample: bool) -> None:
+    """ trains the model and logs the evaluatino metrics """
     train_pipeline = data_pipeline(True) if augment else data_pipeline(False)
     train_loader = BrainDatasetv2(True, train_pipeline, oversample)
     train_loader = DataLoader(train_loader, batch_size=64, shuffle=True,
@@ -91,7 +93,7 @@ def train_and_evaluate(model, augment: bool, oversample: bool) -> None:
     test_loader = BrainDatasetv2(False, test_pipeline, oversample)
     test_loader = DataLoader(test_loader, batch_size=64, shuffle=False,
                              num_workers=4, persistent_workers=True)
-    loss = FocalDiceLoss()
+    loss = DiceLoss()
     optimizer = torch.optim.RAdam(model.parameters())
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=30)
     min_test_loss = 1e10  # keeps the minimum validation loss
@@ -114,7 +116,7 @@ def train_and_evaluate(model, augment: bool, oversample: bool) -> None:
         # save the best model
         if test_loss < min_test_loss:
             min_test_loss = test_loss
-            torch.save(model, 'models/model.pth')
+            torch.save(model, 'models/' + model_name + '.pth')
         scheduler.step()
 
 

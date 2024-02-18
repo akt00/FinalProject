@@ -280,6 +280,7 @@ class UNet(nn.Module):
 
 
 class ResidualBlock(nn.Module):
+    """ Custom Residual Block for ResNet """
     def __init__(self, in_channels: int, identity: bool,
                  downsample: bool = False) -> None:
         super().__init__()
@@ -294,17 +295,23 @@ class ResidualBlock(nn.Module):
         self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3,
                                padding=1, bias=False)
         self.bn2 = nn.BatchNorm2d(out_channels)
+        self.conv3 = nn.Conv2d(out_channels, out_channels, kernel_size=3,
+                               padding=1, bias=False)
+        self.bn3 = nn.BatchNorm2d(out_channels)
         self.se_module = SEModule(out_channels)
         self.identity_conv = nn.Conv2d(in_channels, out_channels, 1,
                                        stride=stride, bias=False)
 
     def forward(self, x: Tensor) -> Tensor:
+        """ forward pass with skip connection """
         out = self.conv1(x)
         out = self.bn1(out)
         out = self.relu(out)
         out = self.conv2(out)
         out = self.bn2(out)
-        # squeeze and excitation
+        out = self.relu(out)
+        out = self.conv3(out)
+        out = self.bn3(out)
         out = self.se_module(out)
         # residual connection
         if self.identity:
@@ -314,6 +321,7 @@ class ResidualBlock(nn.Module):
 
 
 class ResNetBackbone(nn.Module):
+    """ ResNet Backbone for DeepLab """
     def __init__(self, in_channels: int = 3) -> None:
         super().__init__()
         self.conv1 = nn.Conv2d(in_channels, 64, kernel_size=7, stride=2,
@@ -323,19 +331,19 @@ class ResNetBackbone(nn.Module):
         self.layer1 = nn.Sequential(
             ResidualBlock(64, False),
             ResidualBlock(64, False),
-        )
+            )
         self.layer2 = nn.Sequential(
             ResidualBlock(64, True, True),
             ResidualBlock(128, False),
-        )
+            )
         self.layer3 = nn.Sequential(
             ResidualBlock(128, True, True),
             ResidualBlock(256, False),
-        )
+            )
         self.layer4 = nn.Sequential(
             ResidualBlock(256, True),
             ResidualBlock(512, False),
-        )
+            )
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -346,6 +354,7 @@ class ResNetBackbone(nn.Module):
                 nn.init.constant_(m.bias, 0)
 
     def forward(self, x: Tensor) -> Tensor:
+        """ forward pass """
         x = self.conv1(x)
         x = self.relu(x)
         x = self.mp(x)
@@ -357,28 +366,35 @@ class ResNetBackbone(nn.Module):
 
 
 class SEModule(nn.Module):
+    """ Squeeze and Excitation network for Attention mechanism on CNNs """
     def __init__(self, in_channels: int, r: int = 4) -> None:
         super().__init__()
         self.r = r
+        out_channels = in_channels // r
         self.ap = nn.AdaptiveAvgPool2d(1)
         self.conv1 = nn.Conv2d(in_channels=in_channels,
-                               out_channels=in_channels//r,
+                               out_channels=out_channels,
                                kernel_size=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(out_channels)
         self.relu = nn.ReLU()
-        self.conv2 = nn.Conv2d(in_channels=in_channels//4,
+        self.conv2 = nn.Conv2d(in_channels=out_channels,
                                out_channels=in_channels,
                                kernel_size=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(in_channels)
         self.hard_sigmoid = nn.Hardsigmoid()
 
     def forward(self, x: Tensor) -> Tensor:
+        """ forwad pass """
         out = self.ap(x)
         out = self.conv1(out)
-        out = self.conv2(self.relu(out))
-        out = self.hard_sigmoid(out)
+        out = self.relu(self.bn1(out))
+        out = self.conv2(out)
+        out = self.hard_sigmoid(self.bn2(out))
         return x * out
 
 
 class SPPPooling(nn.Module):
+    """ Image pooling network for SPP Network """
     def __init__(self, in_channels: int, out_channels: int) -> None:
         super().__init__()
         self.pooler = nn.Sequential(
@@ -386,9 +402,10 @@ class SPPPooling(nn.Module):
             nn.Conv2d(in_channels, out_channels, 1, bias=False),
             nn.BatchNorm2d(out_channels),
             nn.ReLU(),
-        )
+            )
 
     def forward(self, x: Tensor) -> Tensor:
+        """ forward pass """
         # extracts (h, w)
         scale_factor = x.shape[-2:]
         x = self.pooler(x)
@@ -397,6 +414,7 @@ class SPPPooling(nn.Module):
 
 
 class SPPModule(nn.Module):
+    """ Spatial Pyramidal Pooling with Atrous Convolution """
     def __init__(self, in_channels: int) -> None:
         super().__init__()
         self.dilations = [12, 24, 36]
@@ -406,7 +424,7 @@ class SPPModule(nn.Module):
             nn.Conv2d(in_channels, out_channels, 1, bias=False),
             nn.BatchNorm2d(out_channels),
             nn.ReLU(),
-        ))
+            ))
         for i in range(3):
             modules.append(nn.Sequential(
                 nn.Conv2d(in_channels, out_channels, kernel_size=3,
@@ -423,10 +441,11 @@ class SPPModule(nn.Module):
                       bias=False),
             nn.BatchNorm2d(out_channels),
             nn.ReLU(),
-            nn.Dropout(0.5),
-        )
+            nn.Dropout(0.25),
+            )
 
     def forward(self, x: Tensor) -> Tensor:
+        """ forwad pass """
         outs = []
         for conv in self.convs:
             outs.append(conv(x))
@@ -435,6 +454,7 @@ class SPPModule(nn.Module):
 
 
 class DeepLabv4(nn.Module):
+    """ Improved version of DeepLabv3 """
     def __init__(self, in_channels: int, out_channels: int) -> None:
         super().__init__()
         self.backbone = ResNetBackbone(in_channels)
@@ -450,24 +470,26 @@ class DeepLabv4(nn.Module):
                       groups=256, bias=False),
             nn.Conv2d(256, 256, 1, bias=False),
             nn.BatchNorm2d(256),
-            SEModule(256),
             nn.ReLU(),
             nn.Upsample(scale_factor=4, mode='bilinear', align_corners=True),
-        )
+            )
         self.ds_conv2 = nn.Sequential(
             nn.Conv2d(304, 304, 3, padding=1,
                       groups=304, bias=False),
             nn.Conv2d(304, 256, 1, bias=False),
             nn.BatchNorm2d(256),
-            SEModule(256),
             nn.ReLU(),
-        )
+            nn.Conv2d(256, 256, 3, padding=1, bias=False),
+            nn.BatchNorm2d(256),
+            nn.ReLU(),
+            )
         self.out_conv = nn.Sequential(
             nn.Conv2d(256, out_channels, 1, bias=False),
             nn.Upsample(scale_factor=4, mode='bilinear', align_corners=True),
-        )
+            )
 
     def forward(self, x: Tensor) -> Tensor:
+        """ forwad pass """
         out, enc = self.backbone(x)
         enc = self.encoder_conv(enc)
         out = self.spp(out)

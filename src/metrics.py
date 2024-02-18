@@ -36,6 +36,7 @@ def precision(p: Tensor, gt: Tensor, smooth: float = 1.) -> Tensor:
     Args:
         p: output from the model with threshold applied (b, 1, h, w)
         gt: ground truth (b, 1, h, w)
+        smooth: avoid division by zero
     """
     p = p[:, 0].contiguous().view(p.shape[0], -1)
     gt = gt[:, 0].contiguous().view(gt.shape[0], -1)
@@ -113,7 +114,7 @@ def specificity(p: Tensor, gt: Tensor, smooth: float = 1.) -> Tensor:
     return (tn + smooth) / (tn + fp + smooth)
 
 
-def yoden_j_index(p, gt, smooth: float = 1.):
+def yoden_j_index(p: Tensor, gt: Tensor, smooth: float = 1.) -> Tensor:
     """ Computes Yoden's J Index
 
     Args:
