@@ -20,7 +20,7 @@ def iou(p: Tensor, gt: Tensor, smooth: float = 1.) -> Tensor:
     Args:
         p: output from the model with threshold applied (b, 1, h, w)
         gt: ground truth (b, 1, h, w)
-        smooth: avoid division by zero
+        smooth: avoids division by zero
     """
     # flattens (batch, ch, h, w) to (batch, -1)
     p = p[:, 0].contiguous().view(p.shape[0], -1)
@@ -36,7 +36,7 @@ def precision(p: Tensor, gt: Tensor, smooth: float = 1.) -> Tensor:
     Args:
         p: output from the model with threshold applied (b, 1, h, w)
         gt: ground truth (b, 1, h, w)
-        smooth: avoid division by zero
+        smooth: avoids division by zero
     """
     p = p[:, 0].contiguous().view(p.shape[0], -1)
     gt = gt[:, 0].contiguous().view(gt.shape[0], -1)
@@ -51,7 +51,7 @@ def sensitivity(p: Tensor, gt: Tensor, smooth: float = 1.) -> Tensor:
     Args:
         p: output from the model with threshold applied (b, 1, h, w)
         gt: ground truth (b, 1, h, w)
-        smooth: avoid division by zero
+        smooth: avoids division by zero
     """
     # flattens (batch, ch, h, w) to (batch, -1)
     p = p[:, 0].contiguous().view(p.shape[0], -1)
@@ -67,7 +67,7 @@ def f1_score(p: Tensor, gt: Tensor, smooth: float = 1.) -> Tensor:
     Args:
         p: output from the model with threshold applied (b, 1, h, w)
         gt: ground truth (b, 1, h, w)
-        smooth: avoid division by zero
+        smooth: avoids division by zero
     """
     precision_score = precision(p, gt, smooth=smooth)
     recall_score = sensitivity(p, gt, smooth=smooth)
@@ -81,7 +81,7 @@ def mean_ap(p: Tensor, gt: Tensor, smooth: float = 1.) -> Tensor:
     Args:
         p: output from the model with threshold applied (b, 1, h, w)
         gt: ground truth (b, 1, h, w)
-        smooth: avoid division by zero
+        smooth: avoids division by zero
     """
     precisions, recalls = [], []
     # computes precision/recall for each confidence
@@ -104,7 +104,7 @@ def specificity(p: Tensor, gt: Tensor, smooth: float = 1.) -> Tensor:
     Args:
         p: output from the model with threshold applied (b, 1, h, w)
         gt: ground truth (b, 1, h, w)
-        smooth: avoid division by zero
+        smooth: avoids division by zero
     """
     # flattens (batch, ch, h, w) to (batch, -1)
     p = p[:, 0].contiguous().view(p.shape[0], -1)
@@ -120,6 +120,6 @@ def yoden_j_index(p: Tensor, gt: Tensor, smooth: float = 1.) -> Tensor:
     Args:
         p: output from the model with threshold applied (b, 1, h, w)
         gt: ground truth (b, 1, h, w)
-        smooth: avoid division by zero
+        smooth: avoids division by zero
     """
     return sensitivity(p, gt, smooth) + specificity(p, gt, smooth) - 1
