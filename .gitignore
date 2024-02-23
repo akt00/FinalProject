@@ -1,6 +1,5 @@
 # misc
 dataset/*/
-runs/*
 temp*
 models/*.onnx
 models/*.pth

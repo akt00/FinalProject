@@ -1,3 +1,8 @@
+# Dataset Links
+
+- The original dataset can be downloaded from [here](https://www.kaggle.com/datasets/mateuszbuda/lgg-mri-segmentation)
+- The curated version of the dataset that I used for this project can be downloaded from [here](https://drive.google.com/drive/folders/1P0lijWZ-RLjkRlJXGw9ac-2PHCQFGiAK?usp=drive_link)
+
 # LGG Segmentation Dataset
 
 This dataset contains brain MR images together with manual FLAIR abnormality segmentation masks.
