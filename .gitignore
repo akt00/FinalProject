@@ -1,6 +1,7 @@
 # misc
 dataset/*/
 temp*
+.idea
 models/*.onnx
 models/*.pth
 
