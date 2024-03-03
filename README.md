@@ -14,5 +14,5 @@ I did not include the dataset and the weights of trained models in this reposito
 Name: Akihiro Tanimoto\
 Student ID: 210110083
 
-# Disclaimer
+# Note on Authorship
 All the code in this repository is originally written by Akihiro Tanimoto
